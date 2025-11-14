@@ -1,0 +1,746 @@
+import React, { useState, useCallback } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  LinearProgress,
+  Alert,
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  useTheme,
+  FormControl,
+  FormLabel,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Chip,
+  ListItemIcon,
+  Divider,
+  Select,
+  MenuItem,
+  InputLabel,
+} from '@mui/material';
+import {
+  CloudUpload as UploadIcon,
+  Description as FileIcon,
+  CheckCircle as SuccessIcon,
+  Error as ErrorIcon,
+  Delete as DeleteIcon,
+  Send as SendIcon,
+  Info as InfoIcon,
+  Science as ProcessIcon,
+  Assignment as ReportIcon,
+  InsertDriveFile as PdfIcon,
+  HourglassEmpty as WaitingIcon,
+  PlayArrow as ProcessingIcon,
+} from '@mui/icons-material';
+import { useDropzone } from 'react-dropzone';
+import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
+import { useSnackbar } from 'notistack';
+
+interface UploadedReport {
+  reportId: string;
+  fileName: string;
+  fileSize: number;
+  status: 'uploaded' | 'processing' | 'completed' | 'error';
+  error?: string;
+  processingTime?: number;
+}
+
+const UploadReport: React.FC = () => {
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const [activeStep, setActiveStep] = useState(0);
+  const [files, setFiles] = useState<File[]>([]);
+  const [extractionMethod, setExtractionMethod] = useState<'text' | 'image' | 'hybrid' | 'pdf'>('image');
+  const [model, setModel] = useState<'gemini' | 'gpt-4o' | 'gpt-4.1' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' | 'gemini-2.0-flash'>('gemini-2.5-flash');
+  const [uploading, setUploading] = useState(false);
+  const [uploadedReports, setUploadedReports] = useState<UploadedReport[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number>(-1);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [batchStartTime, setBatchStartTime] = useState<number | null>(null);
+  const [currentElapsedTime, setCurrentElapsedTime] = useState<number>(0);
+  const [showConfig, setShowConfig] = useState(false);
+
+  // Update timer every second while processing
+  React.useEffect(() => {
+    if (batchStartTime && processing) {
+      const interval = setInterval(() => {
+        const elapsed = (Date.now() - batchStartTime) / 1000;
+        setCurrentElapsedTime(elapsed);
+      }, 100); // Update every 100ms for smooth display
+
+      return () => clearInterval(interval);
+    } else {
+      setCurrentElapsedTime(0);
+    }
+  }, [batchStartTime, processing]);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    console.log('[UPLOAD] 1. onDrop triggered, accepted files:', acceptedFiles.length);
+
+    const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf');
+
+    if (pdfFiles.length > 0) {
+      console.log('[UPLOAD] 2. Valid PDF files:', pdfFiles.length);
+      pdfFiles.forEach((file, index) => {
+        console.log(`[UPLOAD] File ${index + 1}:`, {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        });
+      });
+
+      setFiles(pdfFiles);
+      setActiveStep(1);
+      enqueueSnackbar(`${pdfFiles.length} PDF file(s) selected successfully`, { variant: 'success' });
+    } else {
+      console.error('[UPLOAD] ERROR: No valid PDF files');
+      enqueueSnackbar('Please upload PDF files only', { variant: 'error' });
+    }
+  }, [enqueueSnackbar]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'application/pdf': ['.pdf'],
+    },
+    multiple: true, // Enable multiple file selection
+    maxSize: 30 * 1024 * 1024, // 30MB per file
+  });
+
+  const removeFile = (index: number) => {
+    const newFiles = files.filter((_, i) => i !== index);
+    setFiles(newFiles);
+    if (newFiles.length === 0) {
+      setActiveStep(0);
+    }
+  };
+
+  const getTotalSize = () => {
+    return files.reduce((acc, file) => acc + file.size, 0);
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const handleUpload = async () => {
+    console.log('[UPLOAD] ========================================');
+    console.log('[UPLOAD] 4. handleUpload called');
+    console.log('[UPLOAD] 5. Number of files to upload:', files.length);
+    console.log('[UPLOAD] 5.1 Files array:', files);
+    console.log('[UPLOAD] 5.2 Files details:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+
+    if (files.length === 0) {
+      console.error('[UPLOAD] ERROR: No files selected');
+      enqueueSnackbar('Please select at least one file', { variant: 'error' });
+      return;
+    }
+
+    setUploading(true);
+    const formData = new FormData();
+
+    // Append all files
+    files.forEach((file, index) => {
+      formData.append('pdfs', file); // Note: 'pdfs' plural for multiple upload
+      console.log(`[UPLOAD] 6.${index + 1}. Adding file to FormData:`, file.name, 'Size:', file.size, 'Type:', file.type);
+    });
+
+    // Log FormData entries
+    console.log('[UPLOAD] 6.5 FormData entries:');
+    formData.forEach((value, key) => {
+      console.log('[UPLOAD] FormData entry:', key, '=', value);
+    });
+
+    console.log('[UPLOAD] 7. Starting upload to /reports/upload/multiple...');
+    console.log('[UPLOAD] 7.1 Request URL:', '/reports/upload/multiple');
+    console.log('[UPLOAD] 7.2 Request method:', 'POST');
+    console.log('[UPLOAD] 7.3 Content-Type:', 'multipart/form-data');
+
+    try {
+      const response = await api.post('/reports/upload/multiple', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log('[UPLOAD] ========================================');
+      console.log('[UPLOAD] 8. Upload response received');
+      console.log('[UPLOAD] 8.1 Response status:', response.status);
+      console.log('[UPLOAD] 8.2 Response data:', response.data);
+      console.log('[UPLOAD] 8.3 Response success:', response.data.success);
+
+      if (response.data.success) {
+        const reports = response.data.data.uploadedReports;
+        console.log('[UPLOAD] 9. Successfully uploaded reports:', reports.length);
+        console.log('[UPLOAD] 9.1 Uploaded reports array:', reports);
+
+        const uploadedReportsList: UploadedReport[] = reports.map((report: any) => ({
+          reportId: report.reportId,
+          fileName: report.fileName,
+          fileSize: report.fileSize,
+          status: 'uploaded' as const,
+        }));
+
+        setUploadedReports(uploadedReportsList);
+        setActiveStep(2);
+        enqueueSnackbar(`Successfully uploaded ${reports.length} report(s)!`, { variant: 'success' });
+      }
+    } catch (error: any) {
+      console.error('[UPLOAD] ========================================');
+      console.error('[UPLOAD] ERROR: Upload failed');
+      console.error('[UPLOAD] ERROR type:', error.constructor.name);
+      console.error('[UPLOAD] ERROR message:', error.message);
+      console.error('[UPLOAD] ERROR response:', error.response);
+      console.error('[UPLOAD] ERROR response status:', error.response?.status);
+      console.error('[UPLOAD] ERROR response data:', error.response?.data);
+      console.error('[UPLOAD] ERROR response headers:', error.response?.headers);
+      console.error('[UPLOAD] ERROR config:', error.config);
+      console.error('[UPLOAD] Full error object:', error);
+      console.error('[UPLOAD] ========================================');
+      enqueueSnackbar(error.response?.data?.message || 'Upload failed', { variant: 'error' });
+    } finally {
+      setUploading(false);
+      console.log('[UPLOAD] 10. Upload process completed');
+      console.log('[UPLOAD] ========================================');
+    }
+  };
+
+  const handleBatchProcess = async () => {
+    console.log('[UPLOAD] 11. handleBatchProcess called');
+    console.log('[UPLOAD] 12. Reports to process:', uploadedReports.length);
+
+    if (uploadedReports.length === 0) {
+      console.error('[UPLOAD] ERROR: No reports to process');
+      return;
+    }
+
+    setProcessing(true);
+    const batchStart = Date.now();
+    setBatchStartTime(batchStart);
+
+    const processedReports = [...uploadedReports];
+
+    for (let i = 0; i < uploadedReports.length; i++) {
+      const report = uploadedReports[i];
+      setCurrentProcessingIndex(i);
+
+      console.log(`[UPLOAD] Processing ${i + 1}/${uploadedReports.length}: ${report.fileName}`);
+
+      // Update status to processing
+      processedReports[i] = { ...processedReports[i], status: 'processing' };
+      setUploadedReports([...processedReports]);
+
+      const startTime = Date.now();
+
+      try {
+        const response = await api.post(`/reports/${report.reportId}/process`, {
+          extractionMethod: extractionMethod,
+          model: model,
+        });
+
+        const timeInSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        if (response.data.success) {
+          console.log(`[UPLOAD] ✓ ${report.fileName} processed successfully in ${timeInSeconds}s`);
+
+          // Save processing time
+          try {
+            await api.patch(`/reports/${report.reportId}`, {
+              processingTime: parseFloat(timeInSeconds),
+            });
+          } catch (timeError) {
+            console.error('[UPLOAD] Failed to save processing time:', timeError);
+          }
+
+          processedReports[i] = {
+            ...processedReports[i],
+            status: 'completed',
+            processingTime: parseFloat(timeInSeconds),
+          };
+        } else {
+          processedReports[i] = {
+            ...processedReports[i],
+            status: 'error',
+            error: 'Processing failed',
+          };
+        }
+      } catch (error: any) {
+        console.error(`[UPLOAD] ✗ ${report.fileName} processing failed:`, error);
+        processedReports[i] = {
+          ...processedReports[i],
+          status: 'error',
+          error: error.response?.data?.message || 'Processing failed',
+        };
+      }
+
+      setUploadedReports([...processedReports]);
+    }
+
+    const totalTime = ((Date.now() - batchStart) / 1000).toFixed(2);
+    console.log(`[UPLOAD] Batch processing completed in ${totalTime}s`);
+
+    setProcessing(false);
+    setBatchStartTime(null);
+    setCurrentProcessingIndex(-1);
+    setShowSuccessDialog(true);
+
+    const successCount = processedReports.filter(r => r.status === 'completed').length;
+    enqueueSnackbar(
+      `Processed ${successCount}/${uploadedReports.length} reports successfully in ${totalTime}s!`,
+      { variant: successCount === uploadedReports.length ? 'success' : 'warning' }
+    );
+  };
+
+  const handleReset = () => {
+    setFiles([]);
+    setExtractionMethod('image');
+    setModel('gemini-2.5-flash');
+    setUploadedReports([]);
+    setActiveStep(0);
+    setUploading(false);
+    setProcessing(false);
+    setShowSuccessDialog(false);
+    setBatchStartTime(null);
+    setCurrentProcessingIndex(-1);
+  };
+
+  const handleReviewReports = () => {
+    navigate('/nurse/reports');
+  };
+
+  const getStatusIcon = (status: UploadedReport['status']) => {
+    switch (status) {
+      case 'uploaded':
+        return <WaitingIcon color="action" />;
+      case 'processing':
+        return <ProcessingIcon color="primary" />;
+      case 'completed':
+        return <SuccessIcon color="success" />;
+      case 'error':
+        return <ErrorIcon color="error" />;
+    }
+  };
+
+  const getStatusColor = (status: UploadedReport['status']) => {
+    switch (status) {
+      case 'uploaded':
+        return 'default';
+      case 'processing':
+        return 'primary';
+      case 'completed':
+        return 'success';
+      case 'error':
+        return 'error';
+    }
+  };
+
+  const steps = [
+    {
+      label: 'Select PDF Files',
+      description: 'Choose one or more PDF files to upload',
+    },
+    {
+      label: 'Configure Processing',
+      description: 'Select extraction method and AI model',
+    },
+    {
+      label: 'Process Reports',
+      description: 'Upload and process your reports',
+    },
+  ];
+
+  return (
+    <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
+      <Paper elevation={3} sx={{ p: 4 }}>
+        <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <UploadIcon /> Upload Lab Reports
+        </Typography>
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Upload multiple lab report PDFs for AI-powered data extraction
+        </Typography>
+
+        <Stepper activeStep={activeStep} orientation="vertical" sx={{ mt: 4 }}>
+          {/* STEP 1: File Selection */}
+          <Step>
+            <StepLabel>
+              <Typography variant="h6">{steps[0].label}</Typography>
+            </StepLabel>
+            <StepContent>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {steps[0].description}
+              </Typography>
+
+              {files.length === 0 ? (
+                <Box
+                  {...getRootProps()}
+                  sx={{
+                    border: '2px dashed',
+                    borderColor: isDragActive ? 'primary.main' : 'grey.300',
+                    borderRadius: 2,
+                    p: 4,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    bgcolor: isDragActive ? 'action.hover' : 'background.paper',
+                    transition: 'all 0.3s',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      bgcolor: 'action.hover',
+                    },
+                    mt: 2,
+                  }}
+                >
+                  <input {...getInputProps()} />
+                  <UploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    {isDragActive
+                      ? 'Drop the files here...'
+                      : 'Drag & drop PDF files here, or click to select'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Maximum file size: 30MB per file • Multiple files allowed
+                  </Typography>
+                </Box>
+              ) : (
+                <Card sx={{ mt: 2 }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">
+                        Selected Files ({files.length})
+                      </Typography>
+                      <Chip
+                        label={`Total: ${formatBytes(getTotalSize())}`}
+                        color="primary"
+                        size="small"
+                      />
+                    </Box>
+
+                    <List>
+                      {files.map((file, index) => (
+                        <ListItem
+                          key={index}
+                          secondaryAction={
+                            <IconButton edge="end" onClick={() => removeFile(index)} color="error">
+                              <DeleteIcon />
+                            </IconButton>
+                          }
+                        >
+                          <ListItemIcon>
+                            <PdfIcon color="error" />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={file.name}
+                            secondary={formatBytes(file.size)}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Button
+                      variant="outlined"
+                      startIcon={<UploadIcon />}
+                      onClick={() => setFiles([])}
+                      fullWidth
+                    >
+                      Clear All & Select Different Files
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Box sx={{ mt: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={() => setActiveStep(1)}
+                  disabled={files.length === 0}
+                >
+                  Continue to Configuration
+                </Button>
+              </Box>
+            </StepContent>
+          </Step>
+
+          {/* STEP 2: Configuration */}
+          <Step>
+            <StepLabel>
+              <Typography variant="h6">{steps[1].label}</Typography>
+            </StepLabel>
+            <StepContent>
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 2, border: '1px solid #E5E7EB' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography variant="body1" sx={{ fontSize: '14px', color: '#111827', fontWeight: 500 }}>
+                    Image Based Extraction
+                  </Typography>
+                  <Button
+                    size="small"
+                    onClick={() => setShowConfig(!showConfig)}
+                    sx={{
+                      textTransform: 'none',
+                      color: '#4361EE',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' }
+                    }}
+                  >
+                    {showConfig ? 'Hide Config' : 'Change Config'}
+                  </Button>
+                </Box>
+
+                {showConfig && (
+                  <Box sx={{ mt: 2.5, pt: 2.5, borderTop: '1px solid #E5E7EB' }}>
+                    <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+                      {/* Extraction Method Dropdown */}
+                      <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '13px' }}>Extraction Method</InputLabel>
+                        <Select
+                          value={extractionMethod}
+                          onChange={(e) => setExtractionMethod(e.target.value as any)}
+                          label="Extraction Method"
+                          sx={{
+                            fontSize: '14px',
+                            bgcolor: '#FFFFFF',
+                            '& .MuiSelect-select': { py: 1.25 }
+                          }}
+                        >
+                          <MenuItem value="image" sx={{ fontSize: '14px' }}>Image-based Extraction</MenuItem>
+                          <MenuItem value="text" sx={{ fontSize: '14px' }}>Text-based Extraction</MenuItem>
+                          <MenuItem value="hybrid" sx={{ fontSize: '14px' }}>Hybrid (Auto-detect)</MenuItem>
+                          <MenuItem value="pdf" sx={{ fontSize: '14px' }}>Raw PDF (Direct)</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {/* AI Model Dropdown */}
+                      <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '13px' }}>AI Model</InputLabel>
+                        <Select
+                          value={model}
+                          onChange={(e) => setModel(e.target.value as any)}
+                          label="AI Model"
+                          sx={{
+                            fontSize: '14px',
+                            bgcolor: '#FFFFFF',
+                            '& .MuiSelect-select': { py: 1.25 }
+                          }}
+                        >
+                          <MenuItem value="gemini-2.5-flash" sx={{ fontSize: '14px' }}>Gemini 2.5 Flash</MenuItem>
+                          <MenuItem value="gemini-2.5-flash-lite" sx={{ fontSize: '14px' }}>Gemini 2.5 Flash-Lite</MenuItem>
+                          <MenuItem value="gemini-2.0-flash" sx={{ fontSize: '14px' }}>Gemini 2.0 Flash</MenuItem>
+                          <MenuItem value="gpt-4o" sx={{ fontSize: '14px' }}>GPT-4o</MenuItem>
+                          <MenuItem value="gpt-4.1" sx={{ fontSize: '14px' }}>GPT-4.1</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+
+                    <Alert severity="info" sx={{ mt: 2, py: 0.5, fontSize: '13px' }}>
+                      Settings apply to all {files.length} file{files.length !== 1 ? 's' : ''}
+                    </Alert>
+                  </Box>
+                )}
+              </Box>
+
+              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                <Button onClick={() => setActiveStep(0)}>Back</Button>
+                <Button variant="contained" onClick={handleUpload} disabled={uploading}>
+                  {uploading ? `Uploading ${files.length} File${files.length !== 1 ? 's' : ''}...` : `Upload ${files.length} Report${files.length !== 1 ? 's' : ''}`}
+                </Button>
+              </Box>
+            </StepContent>
+          </Step>
+
+          {/* STEP 3: Processing */}
+          <Step>
+            <StepLabel>
+              <Typography variant="h6">{steps[2].label}</Typography>
+            </StepLabel>
+            <StepContent>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {steps[2].description}
+              </Typography>
+
+              <Card sx={{ mt: 2 }}>
+                <CardContent>
+                  {processing && (
+                    <Box sx={{ mb: 3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                        <Typography variant="body2">
+                          Processing file {currentProcessingIndex + 1} of {uploadedReports.length}
+                        </Typography>
+                        <Typography variant="body2" color="primary">
+                          {currentElapsedTime.toFixed(1)}s elapsed
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={(currentProcessingIndex / uploadedReports.length) * 100}
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                        {Math.round((currentProcessingIndex / uploadedReports.length) * 100)}% complete
+                      </Typography>
+                    </Box>
+                  )}
+
+                  <List>
+                    {uploadedReports.map((report, index) => (
+                      <ListItem
+                        key={report.reportId}
+                        sx={{
+                          border: 1,
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          mb: 1,
+                          bgcolor: report.status === 'processing' ? 'action.hover' : 'background.paper',
+                        }}
+                      >
+                        <ListItemIcon>
+                          {getStatusIcon(report.status)}
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body1">{report.fileName}</Typography>
+                              <Chip
+                                label={report.status.toUpperCase()}
+                                size="small"
+                                color={getStatusColor(report.status)}
+                              />
+                            </Box>
+                          }
+                          secondary={
+                            <>
+                              {report.status === 'completed' && report.processingTime && (
+                                <Typography variant="caption" color="success.main">
+                                  ✓ Completed in {report.processingTime.toFixed(2)}s
+                                </Typography>
+                              )}
+                              {report.status === 'error' && (
+                                <Typography variant="caption" color="error">
+                                  ✗ {report.error}
+                                </Typography>
+                              )}
+                              {report.status === 'processing' && (
+                                <Typography variant="caption" color="primary">
+                                  ⏳ Processing...
+                                </Typography>
+                              )}
+                              {report.status === 'uploaded' && (
+                                <Typography variant="caption" color="text.secondary">
+                                  ⏸️ Waiting...
+                                </Typography>
+                              )}
+                            </>
+                          }
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+
+                  {!processing && uploadedReports.some(r => r.status === 'uploaded') && (
+                    <Button
+                      variant="contained"
+                      fullWidth
+                      startIcon={<ProcessIcon />}
+                      onClick={handleBatchProcess}
+                      sx={{ mt: 2 }}
+                    >
+                      Process
+                    </Button>
+                  )}
+
+                  {uploadedReports.every(r => r.status === 'completed' || r.status === 'error') && (
+                    <Alert
+                      severity={uploadedReports.every(r => r.status === 'completed') ? 'success' : 'warning'}
+                      sx={{ mt: 2 }}
+                    >
+                      <Typography variant="body2">
+                        {uploadedReports.filter(r => r.status === 'completed').length} of{' '}
+                        {uploadedReports.length} reports processed successfully
+                      </Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                <Button onClick={handleReset}>Upload New Reports</Button>
+                <Button
+                  variant="contained"
+                  onClick={handleReviewReports}
+                  disabled={!uploadedReports.some(r => r.status === 'completed')}
+                >
+                  Review Reports
+                </Button>
+              </Box>
+            </StepContent>
+          </Step>
+        </Stepper>
+      </Paper>
+
+      {/* Success Dialog */}
+      <Dialog open={showSuccessDialog} onClose={() => setShowSuccessDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SuccessIcon color="success" />
+          Batch Processing Complete
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            {uploadedReports.filter(r => r.status === 'completed').length} of{' '}
+            {uploadedReports.length} reports processed successfully!
+          </Typography>
+
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Processing Summary:
+            </Typography>
+            <List dense>
+              {uploadedReports.map((report, index) => (
+                <ListItem key={index} disablePadding>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {report.status === 'completed' ? <SuccessIcon color="success" fontSize="small" /> : <ErrorIcon color="error" fontSize="small" />}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={report.fileName}
+                    secondary={report.status === 'completed' ? `${report.processingTime?.toFixed(2)}s` : report.error}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleReset} variant="outlined">
+            Upload More Reports
+          </Button>
+          <Button onClick={handleReviewReports} variant="contained">
+            Review Reports
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default UploadReport;

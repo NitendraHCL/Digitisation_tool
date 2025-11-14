@@ -1,0 +1,45 @@
+const express = require('express');
+const router = express.Router();
+const {
+  getReportForReview,
+  editParameter,
+  bulkEditParameters,
+  updateOrderId,
+  approveReport,
+  rejectReport,
+  getEditHistory,
+  getValidationData
+} = require('../controllers/review.controller');
+const { authenticate, isNurseOrAdmin } = require('../middleware/auth.middleware');
+
+// All review routes require nurse or admin authentication
+router.use(authenticate);
+router.use(isNurseOrAdmin);
+
+// Get report for review
+router.get('/:id', getReportForReview);
+
+// Edit single parameter
+router.put('/:id/parameter', editParameter);
+
+// Bulk edit parameters
+router.put('/:id/bulk-edit', bulkEditParameters);
+
+// Update Order ID
+router.patch('/:id/orderId', updateOrderId);
+
+// Get validation data for approval
+router.get('/:id/validation', getValidationData);
+
+// Approve report
+router.post('/:id/approve', approveReport);
+
+// Reject report
+router.post('/:id/reject', rejectReport);
+
+// Get edit history
+router.get('/:id/history', getEditHistory);
+
+console.log('[REVIEW ROUTES] Routes loaded successfully');
+
+module.exports = router;
