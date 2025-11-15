@@ -108,8 +108,8 @@ export interface ExtractedData {
   labName: string;
   labAddress?: string;
   patientName?: string;
-  patientAge?: string;
   patientGender?: string;
+  dateOfTest?: string;
   results: TestResult[];
   pageWiseData?: PageWiseData[];
   columnOrder?: string[];

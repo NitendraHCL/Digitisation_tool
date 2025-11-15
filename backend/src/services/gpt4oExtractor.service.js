@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const LabConfig = require('../models/LabConfig');
+const pLimit = require('p-limit');
 
 class GPT4oExtractorService {
   constructor() {
@@ -44,7 +45,6 @@ LAB_NAME: Unknown Lab
 
 **EXTRACT PATIENT DEMOGRAPHICS from the report header:**
 PATIENT_NAME: [patient name as shown in report]
-PATIENT_AGE: [age in format like "35 Y,2 M,5 D" or as shown]
 PATIENT_GENDER: [male/female/other]
 DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
@@ -294,11 +294,11 @@ ${labNames}
 
 **CRITICAL: If the lab name is NOT from the above list, return "Unknown Lab". Do not look for any other lab apart from the ones mentioned above.**
 
-If you find the lab name from the configured list, add it as the FIRST line in this format:
-LAB_NAME: [exact lab name from the report]
-
-If not found in the configured list, add:
-LAB_NAME: Unknown Lab
+For the FIRST page only: identify and return the following header information:
+LAB_NAME: [exact lab name from the report, or "Unknown Lab" if not in the list above]
+PATIENT_NAME: [patient's full name from the report]
+PATIENT_GENDER: [male/female/other, extract from report]
+DATE_OF_TEST: [date of the test in YYYY-MM-DD format if available]
 
 Then extract all test parameters from THIS PAGE ONLY and return the data in this exact format:
 
@@ -327,198 +327,276 @@ Important:
 **IMPORTANT - Sequential Pages and Interpretations:**
 The pages in this lab report are provided in their original sequential order. You may encounter sections labeled 'Interpretation', 'Interpretations', 'Clinical Notes', or similar headers that appear in tables or text blocks throughout the report. These interpretation sections contain reference information, clinical guidance, or explanatory notes - they are NOT actual test parameter values or measured results. Do not extract data from interpretation sections as test parameters. Only extract actual measured test results with their corresponding values, units, and reference ranges.`;
 
-      // Process each page individually
+      // Process pages concurrently
       const pageWiseData = [];
       const allResults = [];
       let labNameGlobal = null;
+      let patientNameGlobal = null;
+      let patientGenderGlobal = null;
+      let dateOfTestGlobal = null;
       let columnOrderGlobal = null;
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       let totalCost = 0;
 
-      for (let pageIdx = 0; pageIdx < images.length; pageIdx++) {
-        const pageNumber = pageIdx + 1;
-        const pageStartTime = Date.now();
+      console.log('[GPT-4o PAGEWISE] 7. ========== PROCESSING PAGES CONCURRENTLY ==========');
+      console.log('[GPT-4o PAGEWISE] 7a. Concurrency limit: 15 pages at once');
 
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}. ========== PAGE ${pageNumber}/${images.length} ==========`);
+      // Set up concurrency control - process max 15 pages at once
+      const limit = pLimit(15);
 
-        // Skip if image is undefined/null (failed conversion)
-        if (!images[pageIdx] || images[pageIdx].length === 0) {
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.1. ⚠️ SKIPPING: Image data is missing (likely conversion failed)`);
-          continue;
-        }
+      // Create array of promises for concurrent processing
+      const pagePromises = images.map((imageData, pageIdx) =>
+        limit(async () => {
+          const pageNumber = pageIdx + 1;
+          const pageStartTime = Date.now();
 
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.1. Processing page ${pageNumber}...`);
+          console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}. ========== PAGE ${pageNumber}/${images.length} ==========`);
 
-        try {
-          // Prepare single image
-          const imageMessage = {
-            type: 'image_url',
-            image_url: {
-              url: `data:image/png;base64,${images[pageIdx]}`
-            }
-          };
-
-          const pagePayloadSize = images[pageIdx].length;
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.2. Page ${pageNumber} payload size:`, (pagePayloadSize / 1024 / 1024).toFixed(2), 'MB');
-
-          // Call GPT-4o for THIS page only
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.3. Calling GPT-4o API for page ${pageNumber}...`);
-          const apiCallStartTime = Date.now();
-
-          const response = await this.openai.chat.completions.create({
-          model: modelName,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                imageMessage
-              ]
-            }
-          ],
-          temperature: 0,
-          max_tokens: 4096,
-          top_p: 1
-        });
-
-        const pageDuration = ((Date.now() - apiCallStartTime) / 1000).toFixed(2);
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.4. Page ${pageNumber} API call completed in ${pageDuration} seconds`);
-
-        // Parse response for this page
-        const responseText = response.choices[0].message.content;
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.5. Page ${pageNumber} response length:`, responseText.length, 'characters');
-
-        // Parse the pipe-separated response
-        let labNameFromResponse = null;
-        let columnOrderFromResponse = null;
-        const allLines = responseText.trim().split('\n').filter(l => l.trim().length > 0);
-
-        // Check if first line is lab name (only expected on first page)
-        if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
-          labNameFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-          labNameGlobal = labNameFromResponse;
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.6. Lab name from page ${pageNumber}:`, labNameFromResponse);
-          allLines.shift();
-        }
-
-        // Check if next line is column order (only expected on first page)
-        if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-          const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-          columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
-          columnOrderGlobal = columnOrderFromResponse;
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.7. Column order from page ${pageNumber}:`, columnOrderFromResponse);
-          allLines.shift();
-        }
-
-        const lines = allLines.filter(l => l.includes('|'));
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.7. Extracted ${lines.length} parameter lines from page ${pageNumber}`);
-
-        const pageResults = [];
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i].trim();
-          const parts = line.split('|').map(p => p.trim());
-
-          if (parts.length >= 7) {
-            const testName = parts[0];
-            const value = parts[1];
-            const unit = parts[2];
-            const method = parts[3];
-            const refRangeText = parts[4];
-            const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
-            const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
-
-            pageResults.push({
-              type: 'path',
-              serviceItemName: testName,
-              value: value,
-              unit: unit,
-              method: method,
-              referenceRange: {
-                high: refHigh,
-                low: refLow,
-                referenceRange: refRangeText
-              }
-            });
+          // Skip if image is undefined/null (failed conversion)
+          if (!imageData || imageData.length === 0) {
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.1. ⚠️ SKIPPING: Image data is missing (likely conversion failed)`);
+            return null; // Return null for skipped pages
           }
+
+          console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.1. Processing page ${pageNumber}...`);
+
+          try {
+            // Prepare single image
+            const imageMessage = {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/png;base64,${imageData}`
+              }
+            };
+
+            const pagePayloadSize = imageData.length;
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.2. Page ${pageNumber} payload size:`, (pagePayloadSize / 1024 / 1024).toFixed(2), 'MB');
+
+            // Call GPT-4o for THIS page only
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.3. Calling GPT-4o API for page ${pageNumber}...`);
+            const apiCallStartTime = Date.now();
+
+            const response = await this.openai.chat.completions.create({
+              model: modelName,
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: prompt },
+                    imageMessage
+                  ]
+                }
+              ],
+              temperature: 0,
+              max_tokens: 4096,
+              top_p: 1
+            });
+
+            const pageDuration = ((Date.now() - apiCallStartTime) / 1000).toFixed(2);
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.4. Page ${pageNumber} API call completed in ${pageDuration} seconds`);
+
+            // Parse response for this page
+            const responseText = response.choices[0].message.content;
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.5. Page ${pageNumber} response length:`, responseText.length, 'characters');
+
+            // Parse the pipe-separated response
+            let labNameFromResponse = null;
+            let patientNameFromResponse = null;
+            let patientGenderFromResponse = null;
+            let dateOfTestFromResponse = null;
+            let columnOrderFromResponse = null;
+            const allLines = responseText.trim().split('\n').filter(l => l.trim().length > 0);
+
+            // Check if first line is lab name (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
+              labNameFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.6. Lab name from page ${pageNumber}:`, labNameFromResponse);
+              allLines.shift();
+            }
+
+            // Check for patient name (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
+              patientNameFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.6a. Patient name from page ${pageNumber}:`, patientNameFromResponse);
+              allLines.shift();
+            }
+
+            // Check for patient gender (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
+              patientGenderFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.6b. Patient gender from page ${pageNumber}:`, patientGenderFromResponse);
+              allLines.shift();
+            }
+
+            // Check for date of test (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
+              dateOfTestFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.6c. Date of test from page ${pageNumber}:`, dateOfTestFromResponse);
+              allLines.shift();
+            }
+
+            // Check if next line is column order (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
+              const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.7. Column order from page ${pageNumber}:`, columnOrderFromResponse);
+              allLines.shift();
+            }
+
+            const lines = allLines.filter(l => l.includes('|'));
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.7. Extracted ${lines.length} parameter lines from page ${pageNumber}`);
+
+            const pageResults = [];
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              const parts = line.split('|').map(p => p.trim());
+
+              if (parts.length >= 7) {
+                const testName = parts[0];
+                const value = parts[1];
+                const unit = parts[2];
+                const method = parts[3];
+                const refRangeText = parts[4];
+                const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
+                const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
+
+                pageResults.push({
+                  type: 'path',
+                  serviceItemName: testName,
+                  value: value,
+                  unit: unit,
+                  method: method,
+                  referenceRange: {
+                    high: refHigh,
+                    low: refLow,
+                    referenceRange: refRangeText
+                  }
+                });
+              }
+            }
+
+            // Log sample parameters from this page
+            if (pageResults.length > 0) {
+              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.8. Sample parameters from page ${pageNumber}:`);
+              pageResults.slice(0, 3).forEach((param, idx) => {
+                console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.8.${idx + 1}. ${param.serviceItemName}: ${param.value} ${param.unit || ''}`);
+              });
+            }
+
+            // Calculate token usage and cost for this page
+            const usage = response.usage;
+            const inputTokens = usage.prompt_tokens;
+            const outputTokens = usage.completion_tokens;
+
+            // GPT-4o pricing: $2.50 per 1M input, $10.00 per 1M output
+            const pageCost = (inputTokens / 1000000) * 2.50 + (outputTokens / 1000000) * 10.00;
+
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.9. Page ${pageNumber} token usage: ${inputTokens} input + ${outputTokens} output = ${usage.total_tokens} total`);
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.10. Page ${pageNumber} cost: $${pageCost.toFixed(6)}`);
+
+            const pageEndTime = Date.now();
+            const totalPageDuration = ((pageEndTime - pageStartTime) / 1000).toFixed(2);
+            console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.11. ✓ Page ${pageNumber} complete in ${totalPageDuration} seconds`);
+
+            // Return page data (will be collected by Promise.all)
+            return {
+              pageNumber: pageNumber,
+              rawResponse: responseText,
+              results: pageResults,
+              labName: labNameFromResponse,
+              patientName: patientNameFromResponse,
+              patientGender: patientGenderFromResponse,
+              dateOfTest: dateOfTestFromResponse,
+              columnOrder: columnOrderFromResponse,
+              extractionMetadata: {
+                responseLength: responseText.length,
+                parametersExtracted: pageResults.length,
+                processingTime: parseFloat(pageDuration),
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                cost: parseFloat(pageCost.toFixed(6))
+              },
+              extractedAt: new Date()
+            };
+          } catch (pageError) {
+            console.error(`[GPT-4o PAGEWISE] 8.${pageNumber}.x. ❌ ERROR processing page: ${pageError.message}`);
+            // Return error info instead of failing completely
+            return {
+              pageNumber: pageNumber,
+              error: pageError.message,
+              results: []
+            };
+          }
+        })
+      );
+
+      // Execute all page processing concurrently
+      console.log('[GPT-4o PAGEWISE] 9. Executing concurrent API calls...');
+      const pageResultsArray = await Promise.all(pagePromises);
+
+      // Process results and aggregate data
+      console.log('[GPT-4o PAGEWISE] 10. Aggregating results from all pages...');
+      for (const pageData of pageResultsArray) {
+        if (!pageData) continue; // Skip null results (skipped pages)
+
+        // Extract lab name from first page
+        if (pageData.pageNumber === 1 && pageData.labName) {
+          labNameGlobal = pageData.labName;
         }
 
-        // Store lab name from first page
-        if (!labNameGlobal && labNameFromResponse) {
-          labNameGlobal = labNameFromResponse;
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.8. Lab identified:`, labNameGlobal);
+        // Extract patient demographics from first page
+        if (pageData.pageNumber === 1) {
+          if (pageData.patientName) patientNameGlobal = pageData.patientName;
+          if (pageData.patientGender) patientGenderGlobal = pageData.patientGender;
+          if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
         }
 
-        // Log sample parameters from this page
-        if (pageResults.length > 0) {
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.9. Sample parameters from page ${pageNumber}:`);
-          pageResults.slice(0, 3).forEach((param, idx) => {
-            console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.9.${idx + 1}. ${param.serviceItemName}: ${param.value} ${param.unit || ''}`);
-          });
+        // Extract column order from first page
+        if (pageData.pageNumber === 1 && pageData.columnOrder) {
+          columnOrderGlobal = pageData.columnOrder;
         }
 
-        // Calculate token usage and cost for this page
-        const usage = response.usage;
-        const inputTokens = usage.prompt_tokens;
-        const outputTokens = usage.completion_tokens;
-
-        // GPT-4o pricing: $2.50 per 1M input, $10.00 per 1M output
-        const pageCost = (inputTokens / 1000000) * 2.50 + (outputTokens / 1000000) * 10.00;
-
-        totalPromptTokens += inputTokens;
-        totalCompletionTokens += outputTokens;
-        totalCost += pageCost;
-
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.10. Page ${pageNumber} token usage: ${inputTokens} input + ${outputTokens} output = ${usage.total_tokens} total`);
-        console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.11. Page ${pageNumber} cost: $${pageCost.toFixed(6)}`);
-
-        // Store page-wise data
+        // Add to page-wise data
         pageWiseData.push({
-          pageNumber: pageNumber,
-          rawResponse: responseText,
-          results: pageResults,
-          extractionMetadata: {
-            responseLength: responseText.length,
-            parametersExtracted: pageResults.length,
-            processingTime: parseFloat(pageDuration),
-            inputTokens: inputTokens,
-            outputTokens: outputTokens,
-            cost: parseFloat(pageCost.toFixed(6))
-          },
-          extractedAt: new Date()
+          pageNumber: pageData.pageNumber,
+          rawResponse: pageData.rawResponse,
+          results: pageData.results,
+          extractionMetadata: pageData.extractionMetadata,
+          extractedAt: pageData.extractedAt
         });
 
-          // Add results to global results array
-          allResults.push(...pageResults);
+        // Add results to global array
+        allResults.push(...pageData.results);
 
-          const pageEndTime = Date.now();
-          const totalPageDuration = ((pageEndTime - pageStartTime) / 1000).toFixed(2);
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.12. ✓ Page ${pageNumber} complete in ${totalPageDuration} seconds`);
-          console.log(`[GPT-4o PAGEWISE] 7.${pageNumber}.13. Running total: ${allResults.length} parameters extracted so far`);
-        } catch (pageError) {
-          console.error(`[GPT-4o PAGEWISE] 7.${pageNumber}.x. ❌ ERROR processing page: ${pageError.message}`);
-          // Continue with next page instead of failing completely
-          continue;
+        // Aggregate token usage
+        if (pageData.extractionMetadata) {
+          totalPromptTokens += pageData.extractionMetadata.inputTokens || 0;
+          totalCompletionTokens += pageData.extractionMetadata.outputTokens || 0;
+          totalCost += pageData.extractionMetadata.cost || 0;
         }
       }
 
       const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);
       const successfulPages = pageWiseData.length;
-      console.log('[GPT-4o PAGEWISE] 8. ========== PAGE-BY-PAGE EXTRACTION COMPLETE ==========');
-      console.log('[GPT-4o PAGEWISE] 9. Total pages processed:', successfulPages, '/', images.length);
-      console.log('[GPT-4o PAGEWISE] 10. Total parameters extracted:', allResults.length);
-      console.log('[GPT-4o PAGEWISE] 11. Lab identified:', labNameGlobal || 'Unknown Lab');
-      console.log('[GPT-4o PAGEWISE] 12. Total processing time:', totalDuration, 'seconds');
-      console.log('[GPT-4o PAGEWISE] 13. Average time per page:', (successfulPages > 0 ? (parseFloat(totalDuration) / successfulPages).toFixed(2) : '0.00'), 'seconds');
-      console.log('[GPT-4o PAGEWISE] 14. ========== TOTAL TOKEN USAGE & COST ==========');
-      console.log('[GPT-4o PAGEWISE] 15. Total input tokens:', totalPromptTokens);
-      console.log('[GPT-4o PAGEWISE] 16. Total output tokens:', totalCompletionTokens);
-      console.log('[GPT-4o PAGEWISE] 17. Total tokens:', totalPromptTokens + totalCompletionTokens);
-      console.log('[GPT-4o PAGEWISE] 18. Total cost: $' + totalCost.toFixed(6));
+      console.log('[GPT-4o PAGEWISE] 11. ========== PAGE-BY-PAGE EXTRACTION COMPLETE ==========');
+      console.log('[GPT-4o PAGEWISE] 12. Total pages processed:', successfulPages, '/', images.length);
+      console.log('[GPT-4o PAGEWISE] 13. Total parameters extracted:', allResults.length);
+      console.log('[GPT-4o PAGEWISE] 14. Lab identified:', labNameGlobal || 'Unknown Lab');
+      console.log('[GPT-4o PAGEWISE] 15. Total processing time:', totalDuration, 'seconds');
+      console.log('[GPT-4o PAGEWISE] 16. Average time per page:', (successfulPages > 0 ? (parseFloat(totalDuration) / successfulPages).toFixed(2) : '0.00'), 'seconds');
+      console.log('[GPT-4o PAGEWISE] 17. ========== TOTAL TOKEN USAGE & COST ==========');
+      console.log('[GPT-4o PAGEWISE] 18. Total input tokens:', totalPromptTokens);
+      console.log('[GPT-4o PAGEWISE] 19. Total output tokens:', totalCompletionTokens);
+      console.log('[GPT-4o PAGEWISE] 20. Total tokens:', totalPromptTokens + totalCompletionTokens);
+      console.log('[GPT-4o PAGEWISE] 21. Total cost: $' + totalCost.toFixed(6));
 
       // Return enhanced data structure with page-wise data
       return {
         labName: labNameGlobal || 'Unknown Lab',
+        patientName: patientNameGlobal,
+        patientGender: patientGenderGlobal,
+        dateOfTest: dateOfTestGlobal,
         results: allResults,
         pageWiseData: pageWiseData, // NEW: Array of per-page extraction data
         columnOrder: columnOrderGlobal || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order

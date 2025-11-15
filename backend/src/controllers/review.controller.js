@@ -317,6 +317,122 @@ const editParameter = async (req, res) => {
   }
 };
 
+// Edit patient demographics (name, gender, date of test)
+const editDemographics = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { patientName, patientGender, dateOfTest, reason } = req.body;
+
+    console.log('[REVIEW CONTROLLER] Editing demographics for report:', id);
+    console.log('[REVIEW CONTROLLER] New demographics:', { patientName, patientGender, dateOfTest });
+
+    const report = await Report.findById(id);
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    // Check if report can be edited (allow 'ready' and 'approved' for repeat reviews)
+    if (report.status !== 'ready' && report.status !== 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: `Report cannot be edited in ${report.status} status`
+      });
+    }
+
+    const changes = [];
+
+    // Track changes for patientName
+    if (patientName !== undefined && patientName !== report.extractedData.patientName) {
+      changes.push({
+        field: 'patientName',
+        originalValue: report.extractedData.patientName,
+        newValue: patientName,
+        editedBy: req.user.userId,
+        editedAt: new Date(),
+        reason: reason || 'Manual correction of patient name'
+      });
+      report.extractedData.patientName = patientName;
+    }
+
+    // Track changes for patientGender
+    if (patientGender !== undefined && patientGender !== report.extractedData.patientGender) {
+      changes.push({
+        field: 'patientGender',
+        originalValue: report.extractedData.patientGender,
+        newValue: patientGender,
+        editedBy: req.user.userId,
+        editedAt: new Date(),
+        reason: reason || 'Manual correction of patient gender'
+      });
+      report.extractedData.patientGender = patientGender;
+    }
+
+    // Track changes for dateOfTest
+    if (dateOfTest !== undefined && dateOfTest !== report.extractedData.dateOfTest) {
+      changes.push({
+        field: 'dateOfTest',
+        originalValue: report.extractedData.dateOfTest,
+        newValue: dateOfTest,
+        editedBy: req.user.userId,
+        editedAt: new Date(),
+        reason: reason || 'Manual correction of date of test'
+      });
+      report.extractedData.dateOfTest = dateOfTest;
+    }
+
+    // If no changes were made, return early
+    if (changes.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No changes detected',
+        data: {
+          reportId: report._id,
+          demographics: {
+            patientName: report.extractedData.patientName,
+            patientGender: report.extractedData.patientGender,
+            dateOfTest: report.extractedData.dateOfTest
+          }
+        }
+      });
+    }
+
+    // Add all changes to edit history
+    report.editHistory.push(...changes);
+
+    // Save the report
+    await report.save();
+
+    console.log('[REVIEW CONTROLLER] Demographics updated successfully:', changes.length, 'changes');
+
+    res.json({
+      success: true,
+      message: 'Demographics updated successfully',
+      data: {
+        reportId: report._id,
+        changesApplied: changes.length,
+        demographics: {
+          patientName: report.extractedData.patientName,
+          patientGender: report.extractedData.patientGender,
+          dateOfTest: report.extractedData.dateOfTest
+        },
+        editHistory: changes
+      }
+    });
+
+  } catch (error) {
+    console.error('[REVIEW CONTROLLER] Edit demographics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update demographics',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // Bulk edit multiple parameters
 const bulkEditParameters = async (req, res) => {
   try {
@@ -1013,6 +1129,7 @@ const getValidationData = async (req, res) => {
 module.exports = {
   getReportForReview,
   editParameter,
+  editDemographics,
   bulkEditParameters,
   updateOrderId,
   approveReport,

@@ -102,7 +102,6 @@ const ReviewReport: React.FC = () => {
   const [reportData, setReportData] = useState<any>(null);
   const [hasValidationWarnings, setHasValidationWarnings] = useState(false);
   const [loadingValidation, setLoadingValidation] = useState(false);
-
   useEffect(() => {
     console.log('[REVIEW] 1. Component mounted, report ID from URL:', id);
     fetchReport();
@@ -520,6 +519,7 @@ const ReviewReport: React.FC = () => {
     }
   };
 
+
   const getValueIndicator = (parameter: TestParameter | TestResult) => {
     // Try referenceRange first, fall back to normalRange
     const range = parameter.referenceRange || parameter.normalRange;
@@ -574,7 +574,8 @@ const ReviewReport: React.FC = () => {
     if (parameter.referenceRange) {
       // Check if it has the string referenceRange property
       if ('referenceRange' in parameter.referenceRange && typeof parameter.referenceRange.referenceRange === 'string') {
-        return parameter.referenceRange.referenceRange;
+        // Return '-' if the string is "null", otherwise return the actual value
+        return parameter.referenceRange.referenceRange !== 'null' ? parameter.referenceRange.referenceRange : '-';
       }
       // Check if it has low/high numeric values
       if (parameter.referenceRange.low !== null && parameter.referenceRange.high !== null) {
@@ -616,7 +617,7 @@ const ReviewReport: React.FC = () => {
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 600 : 400, color: '#111827', fontSize: '14px' }}>
-              {parameter.value}
+              {parameter.value && parameter.value !== 'null' ? parameter.value : ''}
             </Typography>
             {indicator && indicator.severity !== 'normal' && (
               <Chip
@@ -654,7 +655,7 @@ const ReviewReport: React.FC = () => {
           />
         ) : (
           <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 500 : 400, color: '#6B7280', fontSize: '14px' }}>
-            {parameter.unit}
+            {parameter.unit && parameter.unit !== 'null' ? parameter.unit : ''}
           </Typography>
         );
 
@@ -1002,18 +1003,20 @@ const ReviewReport: React.FC = () => {
             height: '100%'
           }}>
             <CardContent sx={{ p: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-                <PersonIcon sx={{ mr: 1, color: '#06B6D4', fontSize: 20 }} />
-                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Patient
-                </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <PersonIcon sx={{ mr: 1, color: '#06B6D4', fontSize: 20 }} />
+                  <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Patient
+                  </Typography>
+                </Box>
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, color: '#111827', fontSize: '16px', mb: 0.5 }}>
                 {report.extractedData?.patientName || 'Not specified'}
               </Typography>
               <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
-                {report.extractedData?.patientAge && report.extractedData?.patientGender
-                  ? `${report.extractedData.patientAge} / ${report.extractedData.patientGender}`
+                {report.extractedData?.patientGender
+                  ? report.extractedData.patientGender
                   : 'Details not available'}
               </Typography>
             </CardContent>

@@ -387,6 +387,9 @@ const processReport = async (req, res) => {
       report.extractedData = {
         gptRawResponse: extractedData,
         labName: extractedData.labName,
+        patientName: extractedData.patientName,
+        patientGender: extractedData.patientGender,
+        dateOfTest: extractedData.dateOfTest,
         results: extractedData.results,
         extractedAt: new Date(),
         // Store page-wise extraction data if available

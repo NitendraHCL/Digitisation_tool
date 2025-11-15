@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getReportForReview,
   editParameter,
+  editDemographics,
   bulkEditParameters,
   updateOrderId,
   approveReport,
@@ -21,6 +22,9 @@ router.get('/:id', getReportForReview);
 
 // Edit single parameter
 router.put('/:id/parameter', editParameter);
+
+// Edit patient demographics
+router.put('/:id/demographics', editDemographics);
 
 // Bulk edit parameters
 router.put('/:id/bulk-edit', bulkEditParameters);

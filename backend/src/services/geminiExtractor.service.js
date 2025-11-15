@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const LabConfig = require('../models/LabConfig');
+const pLimit = require('p-limit');
 
 class GeminiExtractorService {
   constructor() {
@@ -46,7 +47,6 @@ LAB_NAME: Unknown Lab
 
 **EXTRACT PATIENT DEMOGRAPHICS from the report header:**
 PATIENT_NAME: [patient name as shown in report]
-PATIENT_AGE: [age in format like "35 Y,2 M,5 D" or as shown]
 PATIENT_GENDER: [male/female/other]
 DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
@@ -136,7 +136,6 @@ ${text}`;
 
       // Initialize patient demographics
       let patientName = null;
-      let patientAge = null;
       let patientGender = null;
       let dateOfTest = null;
 
@@ -154,21 +153,15 @@ ${text}`;
         allLines.shift();
       }
 
-      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
-        patientAge = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        console.log('[GEMINI] 18c. Patient age extracted:', patientAge);
-        allLines.shift();
-      }
-
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
         patientGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
-        console.log('[GEMINI] 18d. Patient gender extracted:', patientGender);
+        console.log('[GEMINI] 18c. Patient gender extracted:', patientGender);
         allLines.shift();
       }
 
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
         dateOfTest = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        console.log('[GEMINI] 18e. Date of test extracted:', dateOfTest);
+        console.log('[GEMINI] 18d. Date of test extracted:', dateOfTest);
         allLines.shift();
       }
 
@@ -282,7 +275,6 @@ ${text}`;
       return {
         labName: labName,
         patientName: patientName,
-        patientAge: patientAge,
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
@@ -452,7 +444,6 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Initialize patient demographics
       let patientName = null;
-      let patientAge = null;
       let patientGender = null;
       let dateOfTest = null;
 
@@ -470,21 +461,15 @@ The pages in this lab report are provided in their original sequential order. Yo
         allLines.shift();
       }
 
-      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
-        patientAge = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        console.log('[GEMINI VISION] 18c. Patient age extracted:', patientAge);
-        allLines.shift();
-      }
-
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
         patientGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
-        console.log('[GEMINI VISION] 18d. Patient gender extracted:', patientGender);
+        console.log('[GEMINI VISION] 18c. Patient gender extracted:', patientGender);
         allLines.shift();
       }
 
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
         dateOfTest = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        console.log('[GEMINI VISION] 18e. Date of test extracted:', dateOfTest);
+        console.log('[GEMINI VISION] 18d. Date of test extracted:', dateOfTest);
         allLines.shift();
       }
 
@@ -602,7 +587,6 @@ The pages in this lab report are provided in their original sequential order. Yo
       return {
         labName: labName,
         patientName: patientName,
-        patientAge: patientAge,
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
@@ -663,11 +647,11 @@ ${labNames}
 
 **CRITICAL: If the lab name is NOT from the above list, return "Unknown Lab". Do not look for any other lab apart from the ones mentioned above.**
 
-For the FIRST page only: identify and return the lab name as:
-LAB_NAME: [exact lab name from the report]
-
-Or if not found in the configured list:
-LAB_NAME: Unknown Lab
+For the FIRST page only: identify and return the following header information:
+LAB_NAME: [exact lab name from the report, or "Unknown Lab" if not in the list above]
+PATIENT_NAME: [patient's full name from the report]
+PATIENT_GENDER: [male/female/other, extract from report]
+DATE_OF_TEST: [date of the test in YYYY-MM-DD format if available]
 
 Then extract all test parameters from THIS PAGE ONLY and return in this format:
 
@@ -678,7 +662,7 @@ Important:
 - Return ONLY pipe-separated data, one test per line
 - Do not include explanatory text or markdown
 - Use "null" (as text) for missing numeric values
-- For subsequent pages (not page 1), do NOT include LAB_NAME line
+- For subsequent pages (not page 1), do NOT include header lines (LAB_NAME, PATIENT_NAME, etc.)
 
 **IMPORTANT - Sequential Pages and Interpretations:**
 The pages in this lab report are provided in their original sequential order. You may encounter sections labeled 'Interpretation', 'Interpretations', 'Clinical Notes', or similar headers that appear in tables or text blocks throughout the report. These interpretation sections contain reference information, clinical guidance, or explanatory notes - they are NOT actual test parameter values or measured results. Do not extract data from interpretation sections as test parameters. Only extract actual measured test results with their corresponding values, units, and reference ranges.`;
@@ -687,164 +671,246 @@ The pages in this lab report are provided in their original sequential order. Yo
       const pageWiseData = [];
       const allResults = [];
       let labNameGlobal = null;
+      let patientNameGlobal = null;
+      let patientGenderGlobal = null;
+      let dateOfTestGlobal = null;
       let columnOrderGlobal = null;
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
       let totalCost = 0;
 
-      console.log('[GEMINI PAGEWISE] 6. ========== PROCESSING PAGES INDIVIDUALLY ==========');
+      console.log('[GEMINI PAGEWISE] 6. ========== PROCESSING PAGES CONCURRENTLY ==========');
+      console.log('[GEMINI PAGEWISE] 6a. Concurrency limit: 15 pages at once');
 
-      for (let pageIdx = 0; pageIdx < images.length; pageIdx++) {
-        const pageNumber = pageIdx + 1;
-        const pageStartTime = Date.now();
+      // Set up concurrency control - process max 15 pages at once
+      const limit = pLimit(15);
 
-        console.log(`[GEMINI PAGEWISE] 7.${pageNumber}. ========== PAGE ${pageNumber}/${images.length} ==========`);
+      // Create array of promises for concurrent processing
+      const pagePromises = images.map((imageData, pageIdx) =>
+        limit(async () => {
+          const pageNumber = pageIdx + 1;
+          const pageStartTime = Date.now();
 
-        // Skip if image is undefined/null (failed conversion)
-        if (!images[pageIdx] || images[pageIdx].length === 0) {
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. ⚠️ SKIPPING: Image data is missing (likely conversion failed)`);
-          continue;
+          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}. ========== PAGE ${pageNumber}/${images.length} ==========`);
+
+          // Skip if image is undefined/null (failed conversion)
+          if (!imageData || imageData.length === 0) {
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. ⚠️ SKIPPING: Image data is missing (likely conversion failed)`);
+            return null; // Return null for skipped pages
+          }
+
+          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. Image size: ${(imageData.length / 1024).toFixed(2)}KB`);
+
+          try {
+            // Prepare image part
+            const imagePart = {
+              inlineData: {
+                data: imageData,
+                mimeType: 'image/png'
+              }
+            };
+
+            // Generation config
+            const generationConfig = {
+              temperature: 0,
+              topP: 1,
+              topK: 1,
+              maxOutputTokens: 8192  // Each page should need much less than full report
+            };
+
+            const safetySettings = [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+            ];
+
+            const model = this.genAI.getGenerativeModel({
+              model: modelName,
+              generationConfig,
+              safetySettings
+            });
+
+            // Call Gemini for this page
+            const contents = [promptTemplate, imagePart];
+            const result = await model.generateContent(contents);
+            const response = result.response.text();
+
+            const pageEndTime = Date.now();
+            const pageDuration = ((pageEndTime - pageStartTime) / 1000).toFixed(2);
+
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s`);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Response length: ${response.length} characters`);
+
+            // Parse response
+            const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
+            let labNameFromPage = null;
+            let patientNameFromPage = null;
+            let patientGenderFromPage = null;
+            let dateOfTestFromPage = null;
+            let columnOrderFromPage = null;
+
+            // Check for lab name (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
+              labNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. Lab name: ${labNameFromPage}`);
+              allLines.shift();
+            }
+
+            // Check for patient name (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
+              patientNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d1. Patient name: ${patientNameFromPage}`);
+              allLines.shift();
+            }
+
+            // Check for patient gender (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
+              patientGenderFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d2. Patient gender: ${patientGenderFromPage}`);
+              allLines.shift();
+            }
+
+            // Check for date of test (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
+              dateOfTestFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d3. Date of test: ${dateOfTestFromPage}`);
+              allLines.shift();
+            }
+
+            // Check for column order (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
+              const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              columnOrderFromPage = columnOrderStr.split(',').map(c => c.trim());
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. Column order: ${columnOrderFromPage}`);
+              allLines.shift();
+            }
+
+            const lines = allLines.filter(l => l.includes('|'));
+            const pageResults = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              const parts = line.split('|').map(p => p.trim());
+
+              if (parts.length >= 7) {
+                const testName = parts[0];
+                const value = parts[1];
+                const unit = parts[2];
+                const method = parts[3];
+                const refRangeText = parts[4];
+                const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
+                const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
+
+                const resultObj = {
+                  type: 'path',
+                  serviceItemName: testName,
+                  value: value,
+                  unit: unit,
+                  method: method,
+                  referenceRange: {
+                    high: Number.isNaN(refHigh) ? null : refHigh,
+                    low: Number.isNaN(refLow) ? null : refLow,
+                    referenceRange: refRangeText
+                  }
+                };
+
+                pageResults.push(resultObj);
+              }
+            }
+
+            // Get token usage for this page
+            const usageMetadata = result.response.usageMetadata;
+            const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+            const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+            // Calculate cost even if output is 0 (input-only cost)
+            const pageCost = ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000;
+
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Parameters extracted: ${pageResults.length}`);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Tokens: ${inputTokens} input, ${outputTokens} output`);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}h. Cost: $${pageCost.toFixed(6)}`);
+
+            // Return page data (will be collected by Promise.all)
+            return {
+              pageNumber: pageNumber,
+              rawResponse: response,
+              results: pageResults,
+              labName: labNameFromPage,
+              patientName: patientNameFromPage,
+              patientGender: patientGenderFromPage,
+              dateOfTest: dateOfTestFromPage,
+              columnOrder: columnOrderFromPage,
+              extractionMetadata: {
+                responseLength: response.length,
+                parametersExtracted: pageResults.length,
+                processingTime: parseFloat(pageDuration),
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                cost: pageCost
+              },
+              extractedAt: new Date()
+            };
+          } catch (pageError) {
+            console.error(`[GEMINI PAGEWISE] 7.${pageNumber}x. ❌ ERROR processing page: ${pageError.message}`);
+            // Return error info instead of failing completely
+            return {
+              pageNumber: pageNumber,
+              error: pageError.message,
+              results: []
+            };
+          }
+        })
+      );
+
+      // Execute all page processing concurrently
+      console.log('[GEMINI PAGEWISE] 7. Executing concurrent API calls...');
+      const pageResultsArray = await Promise.all(pagePromises);
+
+      // Process results and aggregate data
+      console.log('[GEMINI PAGEWISE] 8. Aggregating results from all pages...');
+      for (const pageData of pageResultsArray) {
+        if (!pageData) continue; // Skip null results (skipped pages)
+
+        // Extract lab name from first page
+        if (pageData.pageNumber === 1 && pageData.labName) {
+          labNameGlobal = pageData.labName;
         }
 
-        console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. Image size: ${(images[pageIdx].length / 1024).toFixed(2)}KB`);
+        // Extract patient demographics from first page
+        if (pageData.pageNumber === 1) {
+          if (pageData.patientName) patientNameGlobal = pageData.patientName;
+          if (pageData.patientGender) patientGenderGlobal = pageData.patientGender;
+          if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
+        }
 
-        try {
-          // Prepare image part
-          const imagePart = {
-            inlineData: {
-              data: images[pageIdx],
-              mimeType: 'image/png'
-            }
-          };
+        // Extract column order from first page
+        if (pageData.pageNumber === 1 && pageData.columnOrder) {
+          columnOrderGlobal = pageData.columnOrder;
+        }
 
-          // Generation config
-          const generationConfig = {
-            temperature: 0,
-            topP: 1,
-            topK: 1,
-            maxOutputTokens: 8192  // Each page should need much less than full report
-          };
+        // Add to page-wise data
+        pageWiseData.push({
+          pageNumber: pageData.pageNumber,
+          rawResponse: pageData.rawResponse,
+          results: pageData.results,
+          extractionMetadata: pageData.extractionMetadata,
+          extractedAt: pageData.extractedAt
+        });
 
-          const safetySettings = [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
-          ];
+        // Add results to global array
+        allResults.push(...pageData.results);
 
-          const model = this.genAI.getGenerativeModel({
-            model: modelName,
-            generationConfig,
-            safetySettings
-          });
-
-          // Call Gemini for this page
-          const contents = [promptTemplate, imagePart];
-          const result = await model.generateContent(contents);
-          const response = result.response.text();
-
-          const pageEndTime = Date.now();
-          const pageDuration = ((pageEndTime - pageStartTime) / 1000).toFixed(2);
-
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s`);
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Response length: ${response.length} characters`);
-
-          // Parse response
-          const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
-          let labNameFromPage = null;
-          let columnOrderFromPage = null;
-
-          // Check for lab name (only expected on first page)
-          if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
-            labNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-            labNameGlobal = labNameFromPage;
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. Lab name: ${labNameFromPage}`);
-            allLines.shift();
-          }
-
-          // Check for column order (only expected on first page)
-          if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-            const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-            columnOrderFromPage = columnOrderStr.split(',').map(c => c.trim());
-            columnOrderGlobal = columnOrderFromPage;
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. Column order: ${columnOrderFromPage}`);
-            allLines.shift();
-          }
-
-          const lines = allLines.filter(l => l.includes('|'));
-          const pageResults = [];
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            const parts = line.split('|').map(p => p.trim());
-
-            if (parts.length >= 7) {
-              const testName = parts[0];
-              const value = parts[1];
-              const unit = parts[2];
-              const method = parts[3];
-              const refRangeText = parts[4];
-              const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
-              const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
-
-              const resultObj = {
-                type: 'path',
-                serviceItemName: testName,
-                value: value,
-                unit: unit,
-                method: method,
-                referenceRange: {
-                  high: Number.isNaN(refHigh) ? null : refHigh,
-                  low: Number.isNaN(refLow) ? null : refLow,
-                  referenceRange: refRangeText
-                }
-              };
-
-              pageResults.push(resultObj);
-              allResults.push(resultObj);
-            }
-          }
-
-          // Get token usage for this page
-          const usageMetadata = result.response.usageMetadata;
-          const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
-          const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
-          // Calculate cost even if output is 0 (input-only cost)
-          const pageCost = ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000;
-
-          totalInputTokens += inputTokens;
-          totalOutputTokens += outputTokens;
-          totalCost += pageCost;
-
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. Parameters extracted: ${pageResults.length}`);
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Tokens: ${inputTokens} input, ${outputTokens} output`);
-          console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Cost: $${pageCost.toFixed(6)}`);
-
-          // Store page data
-          pageWiseData.push({
-            pageNumber: pageNumber,
-            rawResponse: response,
-            results: pageResults,
-            extractionMetadata: {
-              responseLength: response.length,
-              parametersExtracted: pageResults.length,
-              processingTime: parseFloat(pageDuration),
-              inputTokens: inputTokens,
-              outputTokens: outputTokens,
-              cost: pageCost
-            },
-            extractedAt: new Date()
-          });
-        } catch (pageError) {
-          console.error(`[GEMINI PAGEWISE] 7.${pageNumber}x. ❌ ERROR processing page: ${pageError.message}`);
-          // Continue with next page instead of failing completely
-          continue;
+        // Aggregate token usage
+        if (pageData.extractionMetadata) {
+          totalInputTokens += pageData.extractionMetadata.inputTokens || 0;
+          totalOutputTokens += pageData.extractionMetadata.outputTokens || 0;
+          totalCost += pageData.extractionMetadata.cost || 0;
         }
       }
 
       const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);
       const successfulPages = pageWiseData.length;
-      console.log('[GEMINI PAGEWISE] 8. ========== EXTRACTION COMPLETE ==========');
+      console.log('[GEMINI PAGEWISE] 9. ========== EXTRACTION COMPLETE ==========');
       console.log('[GEMINI PAGEWISE] 9. Total pages processed:', successfulPages, '/', images.length);
       console.log('[GEMINI PAGEWISE] 10. Total parameters extracted:', allResults.length);
       console.log('[GEMINI PAGEWISE] 11. Total processing time:', totalDuration, 'seconds');
@@ -856,6 +922,9 @@ The pages in this lab report are provided in their original sequential order. Yo
       // Return data in enhanced format
       return {
         labName: labNameGlobal || 'Unknown Lab',
+        patientName: patientNameGlobal,
+        patientGender: patientGenderGlobal,
+        dateOfTest: dateOfTestGlobal,
         results: allResults,
         pageWiseData: pageWiseData,
         columnOrder: columnOrderGlobal || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order

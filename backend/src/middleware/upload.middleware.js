@@ -26,8 +26,11 @@ const storage = multer.diskStorage({
 
 // File filter for PDF only
 const fileFilter = (req, file, cb) => {
+  console.log('[UPLOAD MIDDLEWARE] ========== FILE VALIDATION ==========');
   console.log('[UPLOAD MIDDLEWARE] Validating file:', file.originalname);
   console.log('[UPLOAD MIDDLEWARE] Mimetype:', file.mimetype);
+  console.log('[UPLOAD MIDDLEWARE] File size limit:', process.env.MAX_FILE_SIZE || '10485760', 'bytes');
+  console.log('[UPLOAD MIDDLEWARE] File size limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024)));
 
   if (file.mimetype === 'application/pdf') {
     console.log('[UPLOAD MIDDLEWARE] ✓ Valid PDF file');
@@ -36,6 +39,7 @@ const fileFilter = (req, file, cb) => {
     console.log('[UPLOAD MIDDLEWARE] ✗ Invalid file type:', file.mimetype);
     cb(new Error('Only PDF files are allowed'), false);
   }
+  console.log('[UPLOAD MIDDLEWARE] ==========================================');
 };
 
 // Configure multer
@@ -49,18 +53,42 @@ const upload = multer({
 
 // Error handling middleware for multer
 const handleUploadError = (err, req, res, next) => {
-  console.error('[UPLOAD MIDDLEWARE] Upload error:', err);
+  if (err) {
+    console.error('[UPLOAD MIDDLEWARE] ========== UPLOAD ERROR ==========');
+    console.error('[UPLOAD MIDDLEWARE] Error type:', err.constructor.name);
+    console.error('[UPLOAD MIDDLEWARE] Error message:', err.message);
+    console.error('[UPLOAD MIDDLEWARE] Error code:', err.code);
+    console.error('[UPLOAD MIDDLEWARE] Current MAX_FILE_SIZE env:', process.env.MAX_FILE_SIZE);
+    console.error('[UPLOAD MIDDLEWARE] Configured limit (bytes):', parseInt(process.env.MAX_FILE_SIZE) || 10485760);
+    console.error('[UPLOAD MIDDLEWARE] Configured limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024)));
+
+    if (req.file) {
+      console.error('[UPLOAD MIDDLEWARE] File that failed:', {
+        originalname: req.file.originalname,
+        size: req.file.size,
+        sizeMB: (req.file.size / (1024 * 1024)).toFixed(2)
+      });
+    }
+    console.error('[UPLOAD MIDDLEWARE] Full error:', err);
+    console.error('[UPLOAD MIDDLEWARE] ==========================================');
+  }
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
+      const maxSizeMB = Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024));
       return res.status(400).json({
         success: false,
-        message: 'File size too large. Maximum size is 10MB.'
+        message: `File size too large. Maximum size is ${maxSizeMB}MB.`,
+        details: {
+          maxSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760,
+          maxSizeMB: maxSizeMB
+        }
       });
     }
     return res.status(400).json({
       success: false,
-      message: `Upload error: ${err.message}`
+      message: `Upload error: ${err.message}`,
+      code: err.code
     });
   } else if (err) {
     return res.status(400).json({
@@ -68,6 +96,9 @@ const handleUploadError = (err, req, res, next) => {
       message: err.message || 'File upload failed'
     });
   }
+
+  // Log successful upload pass-through
+  console.log('[UPLOAD MIDDLEWARE] ✓ No upload errors, passing to controller');
   next();
 };
 
