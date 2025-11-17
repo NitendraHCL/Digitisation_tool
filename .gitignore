@@ -42,6 +42,14 @@ nikto-*.txt
 /tmp/api-security-tests.sh
 /tmp/api-security-test-results.txt
 
+# VAPT scan results
+/tmp/nmap-*.txt
+/tmp/mongodb-security-test.js
+/tmp/vapt-*.sh
+/tmp/vapt-*.txt
+/tmp/file-upload-test.sh
+backend/mongodb-security-test.js
+
 # Temporary files
 tmp/
 temp/

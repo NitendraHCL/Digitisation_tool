@@ -35,10 +35,14 @@ paths = [
   # Ignore the .gitignore file itself
   '''^\.gitignore$''',
 
-  # Ignore documentation with redacted secrets
+  # Ignore documentation and security reports with example/test secrets
   '''tmp_security_plan\.md''',
   '''SECURITY_ASSESSMENT_ROADMAP\.md''',
   '''STEP_1_COMPLETION_SUMMARY\.md''',
+  '''DAST_SECURITY_REPORT\.md''',
+  '''VAPT_SECURITY_REPORT\.md''',
+  '''SAST_SECURITY_REPORT\.md''',
+  '''DEPENDENCY_VULNERABILITY_REPORT\.md''',
 
   # Ignore test files with mock/fake tokens
   '''test/.*''',
