@@ -25,6 +25,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import UserManagement from './pages/admin/UserManagement';
 import ConfigurationManagement from './pages/admin/ConfigurationManagement';
 import AuditDashboard from './pages/admin/AuditDashboard';
+import ParameterMasterManagement from './pages/admin/ParameterMasterManagement';
 
 
 function App() {
@@ -137,6 +138,14 @@ function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AuditDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="admin/parameter-master"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <ParameterMasterManagement />
                     </ProtectedRoute>
                   }
                 />

@@ -229,7 +229,8 @@ const UploadReport: React.FC = () => {
   };
 
   const handleBatchProcess = async () => {
-    console.log('[UPLOAD] 11. handleBatchProcess called');
+    console.log('[UPLOAD] ========================================');
+    console.log('[UPLOAD] 11. handleBatchProcess called (PARALLEL MODE)');
     console.log('[UPLOAD] 12. Reports to process:', uploadedReports.length);
 
     if (uploadedReports.length === 0) {
@@ -241,77 +242,106 @@ const UploadReport: React.FC = () => {
     const batchStart = Date.now();
     setBatchStartTime(batchStart);
 
-    const processedReports = [...uploadedReports];
+    // Set all reports to processing status
+    const processingReports = uploadedReports.map(r => ({ ...r, status: 'processing' as const }));
+    setUploadedReports(processingReports);
+    setCurrentProcessingIndex(uploadedReports.length - 1); // Show all files as processing
 
-    for (let i = 0; i < uploadedReports.length; i++) {
-      const report = uploadedReports[i];
-      setCurrentProcessingIndex(i);
+    console.log('[UPLOAD] 13. Calling batch processing endpoint /reports/process-multiple');
+    console.log('[UPLOAD] 13.1 Report IDs:', uploadedReports.map(r => r.reportId));
+    console.log('[UPLOAD] 13.2 Extraction method:', extractionMethod);
+    console.log('[UPLOAD] 13.3 Model:', model);
 
-      console.log(`[UPLOAD] Processing ${i + 1}/${uploadedReports.length}: ${report.fileName}`);
+    try {
+      const response = await api.post('/reports/process-multiple', {
+        reportIds: uploadedReports.map(r => r.reportId),
+        extractionMethod: extractionMethod,
+        model: model,
+      });
 
-      // Update status to processing
-      processedReports[i] = { ...processedReports[i], status: 'processing' };
-      setUploadedReports([...processedReports]);
+      console.log('[UPLOAD] ========================================');
+      console.log('[UPLOAD] 14. Batch processing response received');
+      console.log('[UPLOAD] 14.1 Response status:', response.status);
+      console.log('[UPLOAD] 14.2 Response data:', response.data);
 
-      const startTime = Date.now();
+      if (response.data.success) {
+        const batchData = response.data.data;
+        const totalTime = batchData.totalProcessingTime;
 
-      try {
-        const response = await api.post(`/reports/${report.reportId}/process`, {
-          extractionMethod: extractionMethod,
-          model: model,
+        console.log('[UPLOAD] 15. Batch processing completed successfully');
+        console.log('[UPLOAD] 15.1 Total reports:', batchData.totalReports);
+        console.log('[UPLOAD] 15.2 Success count:', batchData.successCount);
+        console.log('[UPLOAD] 15.3 Error count:', batchData.errorCount);
+        console.log('[UPLOAD] 15.4 Total time:', totalTime);
+        console.log('[UPLOAD] 15.5 Average time per report:', batchData.averageTimePerReport);
+        console.log('[UPLOAD] 15.6 Concurrency limit:', batchData.concurrencyLimit);
+
+        // Create a map of results by reportId
+        const resultsMap = new Map();
+
+        batchData.successful.forEach((result: any) => {
+          resultsMap.set(result.reportId, {
+            status: 'completed' as const,
+            processingTime: parseFloat(result.processingTime.replace('s', '')),
+          });
         });
 
-        const timeInSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+        batchData.failed.forEach((result: any) => {
+          resultsMap.set(result.reportId, {
+            status: 'error' as const,
+            error: result.error,
+          });
+        });
 
-        if (response.data.success) {
-          console.log(`[UPLOAD] ✓ ${report.fileName} processed successfully in ${timeInSeconds}s`);
-
-          // Save processing time
-          try {
-            await api.patch(`/reports/${report.reportId}`, {
-              processingTime: parseFloat(timeInSeconds),
-            });
-          } catch (timeError) {
-            console.error('[UPLOAD] Failed to save processing time:', timeError);
+        // Update all reports with results
+        const finalReports = uploadedReports.map(report => {
+          const result = resultsMap.get(report.reportId);
+          if (result) {
+            return { ...report, ...result };
           }
+          return { ...report, status: 'error' as const, error: 'No result returned' };
+        });
 
-          processedReports[i] = {
-            ...processedReports[i],
-            status: 'completed',
-            processingTime: parseFloat(timeInSeconds),
-          };
-        } else {
-          processedReports[i] = {
-            ...processedReports[i],
-            status: 'error',
-            error: 'Processing failed',
-          };
-        }
-      } catch (error: any) {
-        console.error(`[UPLOAD] ✗ ${report.fileName} processing failed:`, error);
-        processedReports[i] = {
-          ...processedReports[i],
-          status: 'error',
-          error: error.response?.data?.message || 'Processing failed',
-        };
+        setUploadedReports(finalReports);
+        setShowSuccessDialog(true);
+
+        const successCount = finalReports.filter(r => r.status === 'completed').length;
+        console.log('[UPLOAD] 16. UI updated with final results');
+        console.log('[UPLOAD] 16.1 Success count:', successCount);
+        console.log('[UPLOAD] 16.2 Failed count:', finalReports.length - successCount);
+        console.log('[UPLOAD] ========================================');
+
+        enqueueSnackbar(
+          `Processed ${successCount}/${uploadedReports.length} reports in parallel in ${totalTime}!`,
+          { variant: successCount === uploadedReports.length ? 'success' : 'warning' }
+        );
+      } else {
+        throw new Error(response.data.message || 'Batch processing failed');
       }
+    } catch (error: any) {
+      console.error('[UPLOAD] ========================================');
+      console.error('[UPLOAD] ERROR: Batch processing failed');
+      console.error('[UPLOAD] ERROR message:', error.message);
+      console.error('[UPLOAD] ERROR response:', error.response?.data);
+      console.error('[UPLOAD] ========================================');
 
-      setUploadedReports([...processedReports]);
+      // Mark all reports as error
+      const errorReports = uploadedReports.map(r => ({
+        ...r,
+        status: 'error' as const,
+        error: error.response?.data?.message || 'Batch processing failed',
+      }));
+      setUploadedReports(errorReports);
+
+      enqueueSnackbar(
+        error.response?.data?.message || 'Batch processing failed',
+        { variant: 'error' }
+      );
+    } finally {
+      setProcessing(false);
+      setBatchStartTime(null);
+      setCurrentProcessingIndex(-1);
     }
-
-    const totalTime = ((Date.now() - batchStart) / 1000).toFixed(2);
-    console.log(`[UPLOAD] Batch processing completed in ${totalTime}s`);
-
-    setProcessing(false);
-    setBatchStartTime(null);
-    setCurrentProcessingIndex(-1);
-    setShowSuccessDialog(true);
-
-    const successCount = processedReports.filter(r => r.status === 'completed').length;
-    enqueueSnackbar(
-      `Processed ${successCount}/${uploadedReports.length} reports successfully in ${totalTime}s!`,
-      { variant: successCount === uploadedReports.length ? 'success' : 'warning' }
-    );
   };
 
   const handleReset = () => {

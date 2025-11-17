@@ -258,6 +258,50 @@ const reportSchema = new mongoose.Schema({
       default: 'low'
     }
   },
+  // Validation flags from Parameter Master validation
+  validationFlags: [{
+    resultIndex: {
+      type: Number,
+      description: 'Index in results array that this flag applies to'
+    },
+    parameterId: {
+      type: String,
+      default: null,
+      description: 'ID from Parameter Master (null if parameter not found)'
+    },
+    parameterName: {
+      type: String,
+      description: 'Parameter name that was validated'
+    },
+    field: {
+      type: String,
+      enum: ['parameterName', 'unit', 'value'],
+      description: 'Which field has the validation issue'
+    },
+    flagType: {
+      type: String,
+      enum: ['PARAMETER_NOT_FOUND', 'UNIT_MISMATCH', 'VALUE_TYPE_MISMATCH'],
+      description: 'Type of validation flag'
+    },
+    expected: {
+      type: mongoose.Schema.Types.Mixed,
+      description: 'Expected value(s) from Parameter Master'
+    },
+    actual: {
+      type: mongoose.Schema.Types.Mixed,
+      description: 'Actual value found in extraction'
+    },
+    severity: {
+      type: String,
+      enum: ['warning', 'error'],
+      default: 'warning',
+      description: 'Severity level for UI display'
+    },
+    message: {
+      type: String,
+      description: 'Human-readable validation message'
+    }
+  }],
   // Edit history for nurse changes (Phase 6)
   editHistory: [{
     field: String,
@@ -358,6 +402,10 @@ const reportSchema = new mongoose.Schema({
     },
     reviewDuration: {
       type: Number, // in seconds
+      default: null
+    },
+    secondsPerParameter: {
+      type: Number, // calculated as reviewDuration / totalParameters
       default: null
     }
   }

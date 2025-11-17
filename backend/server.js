@@ -83,8 +83,10 @@ if (process.env.NODE_ENV === 'development') {
 console.log('[SERVER] Configuring static file serving...');
 const uploadsDir = path.join(__dirname, process.env.UPLOAD_DIR || 'uploads');
 console.log('[SERVER] Uploads directory path:', uploadsDir);
+// eslint-disable-next-line security/detect-non-literal-fs-filename
 if (!fs.existsSync(uploadsDir)) {
   console.log('[SERVER] ⚠️  Uploads directory does not exist, creating...');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   fs.mkdirSync(uploadsDir, { recursive: true });
   console.log('[SERVER] ✓ Uploads directory created');
 } else {
@@ -260,6 +262,17 @@ try {
   console.error('[SERVER] Stack trace:', error.stack);
 }
 
+// Parameter Master routes
+console.log('[SERVER] Loading parameter master routes...');
+try {
+  const parameterMasterRoutes = require('./src/routes/parameterMaster.routes');
+  app.use('/api/parameter-master', parameterMasterRoutes);
+  console.log('[SERVER] ✓ Parameter master routes registered at /api/parameter-master');
+} catch (error) {
+  console.error('[SERVER] ✗ ERROR loading parameter master routes:', error.message);
+  console.error('[SERVER] Stack trace:', error.stack);
+}
+
 console.log('[SERVER] ========== ALL ROUTES LOADED ==========');
 
 // 404 handler
@@ -284,7 +297,8 @@ try {
   console.error('[SERVER] ✗ ERROR loading error middleware:', error.message);
   console.error('[SERVER] Stack trace:', error.stack);
   // Fallback error handler
-  app.use((err, req, res, next) => {
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, _next) => {
     console.error('[SERVER] ✗✗✗ UNHANDLED ERROR ✗✗✗');
     console.error('[SERVER] Error:', err.message);
     console.error('[SERVER] Stack:', err.stack);

@@ -397,12 +397,7 @@ const getPerformanceMetrics = async (req, res) => {
             month: { $month: '$createdAt' },
             day: { $dayOfMonth: '$createdAt' }
           },
-          processingTime: {
-            $divide: [
-              { $subtract: ['$updatedAt', '$createdAt'] },
-              1000 * 60 // Convert to minutes
-            ]
-          }
+          processingTime: '$processingMetadata.totalProcessingTime' // Processing time in seconds
         }
       },
       {

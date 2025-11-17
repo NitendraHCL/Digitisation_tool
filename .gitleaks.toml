@@ -72,6 +72,9 @@ regexes = [
   '''sk-proj-XXXXX''',
   '''AIzaSy-XXXXX''',
 
+  # Ignore localhost MongoDB connection strings (not secrets)
+  '''mongodb://localhost:[0-9]+/''',
+
   # Ignore example UUIDs and test data
   '''00000000-0000-0000-0000-000000000000''',
 ]

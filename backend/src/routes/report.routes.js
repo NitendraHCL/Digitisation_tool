@@ -8,10 +8,12 @@ const {
   downloadPDF,
   updateReport,
   deleteReport,
-  cleanupStuckReports
+  cleanupStuckReports,
+  revalidateParameters
 } = require('../controllers/report.controller');
 const {
   processReport,
+  processMultipleReports,
   getExtractedData
 } = require('../controllers/process.controller');
 const { authenticate, isNurseOrAdmin, isAdmin } = require('../middleware/auth.middleware');
@@ -33,7 +35,9 @@ router.patch('/:id', isNurseOrAdmin, updateReport);
 
 // Processing routes
 router.post('/:id/process', isNurseOrAdmin, processReport);
+router.post('/process-multiple', isNurseOrAdmin, processMultipleReports);
 router.get('/:id/extracted', isNurseOrAdmin, getExtractedData);
+router.post('/:id/revalidate', isNurseOrAdmin, revalidateParameters);
 
 // Admin only routes
 router.delete('/:id', isAdmin, deleteReport);

@@ -41,6 +41,7 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   History as AuditIcon,
+  ListAlt as ParameterIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -126,6 +127,11 @@ const Layout: React.FC = () => {
             title: 'Configuration',
             path: '/admin/config',
             icon: <SettingsIcon />,
+          },
+          {
+            title: 'Parameter Master',
+            path: '/admin/parameter-master',
+            icon: <ParameterIcon />,
           },
           {
             title: 'Audit Logs',

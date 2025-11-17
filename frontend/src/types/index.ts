@@ -26,6 +26,18 @@ export interface AuthResponse {
 // Report types
 export type ReportStatus = 'uploaded' | 'processing' | 'ready' | 'approved' | 'rejected' | 'error';
 
+export interface ValidationFlag {
+  resultIndex: number;
+  parameterId?: string | null;
+  parameterName: string;
+  field: 'parameterName' | 'unit' | 'value';
+  flagType: 'PARAMETER_NOT_FOUND' | 'UNIT_MISMATCH' | 'VALUE_TYPE_MISMATCH';
+  expected: any;
+  actual: any;
+  severity: 'warning' | 'error';
+  message: string;
+}
+
 export interface Report {
   _id: string;
   orderId: string;
@@ -41,6 +53,7 @@ export interface Report {
   extractedData?: ExtractedData;
   flags?: ReportFlags;
   uiIndicators?: UIIndicators;
+  validationFlags?: ValidationFlag[]; // Validation flags from Parameter Master
   approvedBy?: User;
   approvedAt?: string;
   rejectedBy?: User;
@@ -58,6 +71,7 @@ export interface AuditSummary {
   accuracyPercentage: number;
   calculatedAt: string;
   reviewDuration?: number;
+  secondsPerParameter?: number;
 }
 
 export interface FinalData {
@@ -288,6 +302,8 @@ export interface AuditReportEntry {
   totalParameters: number;
   editedParameters: number;
   accuracyPercentage: number;
+  reviewDuration?: number | null;
+  secondsPerParameter?: number | null;
   reviewedBy: string;
   reviewedAt: string;
   status: string;

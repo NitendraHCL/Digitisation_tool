@@ -165,6 +165,8 @@ const getAuditReports = async (req, res) => {
         totalParameters: report.auditSummary?.totalParameters || 0,
         editedParameters: report.auditSummary?.editedParameters || 0,
         accuracyPercentage: report.auditSummary?.accuracyPercentage || 0,
+        reviewDuration: report.auditSummary?.reviewDuration || null,
+        secondsPerParameter: report.auditSummary?.secondsPerParameter || null,
         reviewedBy: reviewedBy,
         reviewedAt: report.approvedAt || report.rejectedAt,
         status: report.status

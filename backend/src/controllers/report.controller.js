@@ -1,6 +1,7 @@
 const Report = require('../models/Report');
 const path = require('path');
 const fs = require('fs');
+const parameterValidator = require('../services/parameterValidator.service');
 
 // Upload PDF controller
 const uploadPDF = async (req, res) => {
@@ -470,6 +471,71 @@ const cleanupStuckReports = async (req, res) => {
   }
 };
 
+// Re-validate parameters against Parameter Master
+const revalidateParameters = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('[REPORT CONTROLLER] Re-validation request for report:', id, 'by:', req.user.email);
+
+    const report = await Report.findById(id)
+      .populate('uploadedBy', 'name email');
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    // Check access permission
+    if (req.user.role === 'nurse' && report.uploadedBy._id.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Check if report has extracted data
+    if (!report.extractedData || !report.extractedData.results) {
+      return res.status(400).json({
+        success: false,
+        message: 'Report has no extracted data to validate. Please process the report first.'
+      });
+    }
+
+    console.log('[REPORT CONTROLLER] Re-validating', report.extractedData.results.length, 'parameters');
+
+    // Re-run validation using existing service
+    const validation = await parameterValidator.validateAgainstMaster(report.extractedData);
+
+    // Update validation flags
+    report.validationFlags = validation.validationFlags || [];
+    await report.save();
+
+    console.log('[REPORT CONTROLLER] Re-validation complete:', validation.validationFlags.length, 'flags');
+
+    // Re-populate before returning
+    const updatedReport = await Report.findById(id)
+      .populate('uploadedBy', 'name email')
+      .populate('approvedBy', 'name email')
+      .populate('editHistory.editedBy', 'name email');
+
+    res.json({
+      success: true,
+      message: 'Parameters re-validated successfully',
+      data: updatedReport,
+      validationSummary: validation.summary
+    });
+  } catch (error) {
+    console.error('[REPORT CONTROLLER] Re-validation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to re-validate parameters',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   uploadPDF,
   uploadMultiplePDFs,
@@ -478,5 +544,6 @@ module.exports = {
   downloadPDF,
   updateReport,
   deleteReport,
-  cleanupStuckReports
+  cleanupStuckReports,
+  revalidateParameters
 };

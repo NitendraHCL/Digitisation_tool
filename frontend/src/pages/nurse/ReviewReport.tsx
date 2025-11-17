@@ -60,14 +60,86 @@ import {
   Delete as DeleteIcon,
   Check as CheckIcon,
   Close as CloseIcon,
+  Code as CodeIcon,
+  CheckCircle as CheckCircleIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import api from '../../services/api';
 import { useSnackbar } from 'notistack';
 import { Report, TestParameter, TestResult, EditHistory } from '../../types';
 import PDFViewer from '../../components/common/PDFViewer';
+import ValidationFlag from '../../components/validation/ValidationFlag';
 
 import JsonOutputView from '../../components/JsonOutputView';
 // Using EditHistory from types
+
+// Interface for review session tracking
+interface ReviewSession {
+  reportId: string;
+  accumulatedSeconds: number;  // Total time across all sessions
+  sessionStartTime: number | null;  // Current session start timestamp
+  lastSavedTime: number;  // When was this last updated
+}
+
+// localStorage helper functions for review session management
+const STORAGE_PREFIX = 'review_session_';
+
+const getReviewSession = (reportId: string): ReviewSession | null => {
+  try {
+    const key = `${STORAGE_PREFIX}${reportId}`;
+    const data = localStorage.getItem(key);
+    if (data) {
+      return JSON.parse(data) as ReviewSession;
+    }
+  } catch (error) {
+    console.error('[REVIEW TIMER] Error reading session from localStorage:', error);
+  }
+  return null;
+};
+
+const saveReviewSession = (session: ReviewSession): void => {
+  try {
+    const key = `${STORAGE_PREFIX}${session.reportId}`;
+    localStorage.setItem(key, JSON.stringify(session));
+  } catch (error) {
+    console.error('[REVIEW TIMER] Error saving session to localStorage:', error);
+  }
+};
+
+const removeReviewSession = (reportId: string): void => {
+  try {
+    const key = `${STORAGE_PREFIX}${reportId}`;
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error('[REVIEW TIMER] Error removing session from localStorage:', error);
+  }
+};
+
+// Clean up old sessions (older than 7 days)
+const cleanupOldSessions = (): void => {
+  try {
+    const keys = Object.keys(localStorage);
+    const now = Date.now();
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+
+    keys.forEach(key => {
+      if (key.startsWith(STORAGE_PREFIX)) {
+        try {
+          const session = JSON.parse(localStorage.getItem(key) || '{}') as ReviewSession;
+          if (session.lastSavedTime && (now - session.lastSavedTime > SEVEN_DAYS)) {
+            localStorage.removeItem(key);
+            console.log('[REVIEW TIMER] Cleaned up old session:', key);
+          }
+        } catch (e) {
+          // Remove corrupted entries
+          localStorage.removeItem(key);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[REVIEW TIMER] Error during cleanup:', error);
+  }
+};
 
 const ReviewReport: React.FC = () => {
   const theme = useTheme();
@@ -91,8 +163,13 @@ const ReviewReport: React.FC = () => {
   const [tempOrderId, setTempOrderId] = useState('');
   const [savingOrderId, setSavingOrderId] = useState(false);
   const [showRepeatReview, setShowRepeatReview] = useState(false);
+  const [showJsonOutput, setShowJsonOutput] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  // Cumulative time tracking state
+  const [currentSessionStart, setCurrentSessionStart] = useState<number | null>(null);
+  const [accumulatedTime, setAccumulatedTime] = useState<number>(0);
+  const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
   const [parameterToDelete, setParameterToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showValidationDialog, setShowValidationDialog] = useState(false);
@@ -102,10 +179,120 @@ const ReviewReport: React.FC = () => {
   const [reportData, setReportData] = useState<any>(null);
   const [hasValidationWarnings, setHasValidationWarnings] = useState(false);
   const [loadingValidation, setLoadingValidation] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+
+  // Timer helper functions
+  const pauseTimer = () => {
+    if (!id || !isTimerActive || currentSessionStart === null) return;
+
+    const now = Date.now();
+    const sessionDuration = Math.floor((now - currentSessionStart) / 1000);
+    const newAccumulated = accumulatedTime + sessionDuration;
+
+    console.log('[REVIEW TIMER] Pausing timer:', {
+      sessionDuration,
+      previousAccumulated: accumulatedTime,
+      newAccumulated
+    });
+
+    setAccumulatedTime(newAccumulated);
+    setCurrentSessionStart(null);
+    setIsTimerActive(false);
+
+    // Save to localStorage
+    saveReviewSession({
+      reportId: id,
+      accumulatedSeconds: newAccumulated,
+      sessionStartTime: null,
+      lastSavedTime: now
+    });
+  };
+
+  const resumeTimer = () => {
+    if (!id || isTimerActive) return;
+
+    const now = Date.now();
+    console.log('[REVIEW TIMER] Resuming timer, accumulated time:', accumulatedTime);
+
+    setCurrentSessionStart(now);
+    setIsTimerActive(true);
+
+    // Update localStorage
+    saveReviewSession({
+      reportId: id,
+      accumulatedSeconds: accumulatedTime,
+      sessionStartTime: now,
+      lastSavedTime: now
+    });
+  };
+
+  const saveCurrentSession = () => {
+    if (!id) return;
+
+    let finalAccumulated = accumulatedTime;
+
+    // If timer is active, add current session time
+    if (isTimerActive && currentSessionStart !== null) {
+      const now = Date.now();
+      const sessionDuration = Math.floor((now - currentSessionStart) / 1000);
+      finalAccumulated = accumulatedTime + sessionDuration;
+    }
+
+    console.log('[REVIEW TIMER] Saving current session, total accumulated:', finalAccumulated);
+
+    saveReviewSession({
+      reportId: id,
+      accumulatedSeconds: finalAccumulated,
+      sessionStartTime: isTimerActive ? Date.now() : null,
+      lastSavedTime: Date.now()
+    });
+  };
+
   useEffect(() => {
     console.log('[REVIEW] 1. Component mounted, report ID from URL:', id);
     fetchReport();
   }, [id]);
+
+  // Page Visibility API - pause timer when tab becomes inactive
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log('[REVIEW TIMER] Page became hidden, pausing timer');
+        pauseTimer();
+      } else {
+        console.log('[REVIEW TIMER] Page became visible, resuming timer');
+        resumeTimer();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isTimerActive, currentSessionStart, accumulatedTime, id]);
+
+  // beforeunload - save session before page unload/navigation
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log('[REVIEW TIMER] Page unloading, saving session');
+      saveCurrentSession();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isTimerActive, currentSessionStart, accumulatedTime, id]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      console.log('[REVIEW TIMER] Component unmounting, saving session');
+      saveCurrentSession();
+    };
+  }, [isTimerActive, currentSessionStart, accumulatedTime, id]);
 
   const fetchReport = async () => {
     console.log('[REVIEW] 2. fetchReport called for ID:', id);
@@ -149,6 +336,48 @@ const ReviewReport: React.FC = () => {
 
         console.log('[REVIEW] 16. Setting report state');
         setReport(response.data.data);
+
+        // Initialize cumulative timer for review tracking (only if status is 'ready' or 'approved')
+        if (response.data.data.status === 'ready' || response.data.data.status === 'approved') {
+          if (id) {
+            // Clean up old sessions first
+            cleanupOldSessions();
+
+            // Check for existing session in localStorage
+            const existingSession = getReviewSession(id);
+
+            if (existingSession) {
+              console.log('[REVIEW TIMER] Restoring existing session:', existingSession);
+              setAccumulatedTime(existingSession.accumulatedSeconds);
+
+              // Start new session
+              const now = Date.now();
+              setCurrentSessionStart(now);
+              setIsTimerActive(true);
+
+              saveReviewSession({
+                reportId: id,
+                accumulatedSeconds: existingSession.accumulatedSeconds,
+                sessionStartTime: now,
+                lastSavedTime: now
+              });
+            } else {
+              // Start fresh session
+              console.log('[REVIEW TIMER] Starting fresh review session');
+              const now = Date.now();
+              setAccumulatedTime(0);
+              setCurrentSessionStart(now);
+              setIsTimerActive(true);
+
+              saveReviewSession({
+                reportId: id,
+                accumulatedSeconds: 0,
+                sessionStartTime: now,
+                lastSavedTime: now
+              });
+            }
+          }
+        }
       } else {
         console.error('[REVIEW] ERROR: No data in response.data.data');
       }
@@ -409,10 +638,25 @@ const ReviewReport: React.FC = () => {
     console.log('mismatchReason:', mismatchReason);
     console.log('approvalNotes:', approvalNotes);
 
+    // Calculate cumulative review duration in seconds
+    let reviewDuration = accumulatedTime;
+
+    // If timer is currently active, add current session time
+    if (isTimerActive && currentSessionStart !== null) {
+      const now = Date.now();
+      const currentSessionSeconds = Math.floor((now - currentSessionStart) / 1000);
+      reviewDuration = accumulatedTime + currentSessionSeconds;
+    }
+
+    console.log('[REVIEW TIMER] Total review duration (seconds):', reviewDuration);
+    console.log('[REVIEW TIMER] Accumulated time:', accumulatedTime);
+    console.log('[REVIEW TIMER] Current session:', isTimerActive ? 'active' : 'paused');
+
     const payload = {
       comments: approvalNotes,
       confirmMismatch,
-      mismatchReason
+      mismatchReason,
+      reviewDuration
     };
 
     console.log('Request payload:', JSON.stringify(payload, null, 2));
@@ -425,6 +669,12 @@ const ReviewReport: React.FC = () => {
       console.log('✓✓✓ APPROVAL SUCCESS! ✓✓✓');
       console.log('Response status:', response.status);
       console.log('Response data:', JSON.stringify(response.data, null, 2));
+
+      // Remove review session from localStorage as review is complete
+      if (id) {
+        removeReviewSession(id);
+        console.log('[REVIEW TIMER] Session removed from localStorage after approval');
+      }
 
       enqueueSnackbar('Report approved successfully', { variant: 'success' });
       setShowApproveDialog(false);
@@ -461,8 +711,32 @@ const ReviewReport: React.FC = () => {
       return;
     }
 
+    // Calculate cumulative review duration in seconds
+    let reviewDuration = accumulatedTime;
+
+    // If timer is currently active, add current session time
+    if (isTimerActive && currentSessionStart !== null) {
+      const now = Date.now();
+      const currentSessionSeconds = Math.floor((now - currentSessionStart) / 1000);
+      reviewDuration = accumulatedTime + currentSessionSeconds;
+    }
+
+    console.log('[REVIEW TIMER] Reject - Total review duration (seconds):', reviewDuration);
+    console.log('[REVIEW TIMER] Accumulated time:', accumulatedTime);
+    console.log('[REVIEW TIMER] Current session:', isTimerActive ? 'active' : 'paused');
+
     try {
-      await api.post(`/review/${id}/reject`, { reason: rejectionReason });
+      await api.post(`/review/${id}/reject`, {
+        reason: rejectionReason,
+        reviewDuration
+      });
+
+      // Remove review session from localStorage as review is complete
+      if (id) {
+        removeReviewSession(id);
+        console.log('[REVIEW TIMER] Session removed from localStorage after rejection');
+      }
+
       enqueueSnackbar('Report rejected', { variant: 'info' });
       navigate('/nurse/reports');
     } catch (error: any) {
@@ -516,6 +790,30 @@ const ReviewReport: React.FC = () => {
       enqueueSnackbar(errorMessage, { variant: 'error' });
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleRevalidate = async () => {
+    if (!id) return;
+
+    setRevalidating(true);
+    try {
+      const response = await api.post(`/reports/${id}/revalidate`);
+
+      if (response.data.success) {
+        setReport(response.data.data);
+        const flagCount = response.data.data.validationFlags?.length || 0;
+        enqueueSnackbar(
+          `Parameters re-validated successfully. ${flagCount} validation flag(s) found.`,
+          { variant: 'success' }
+        );
+        console.log('[REVALIDATE] Validation summary:', response.data.validationSummary);
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to re-validate parameters';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    } finally {
+      setRevalidating(false);
     }
   };
 
@@ -593,11 +891,25 @@ const ReviewReport: React.FC = () => {
   const columnOrder = report?.extractedData?.columnOrder || ['Parameter', 'Value', 'Normal Range', 'Unit'];
   console.log('[REVIEW] Column order:', columnOrder);
 
+  // Helper function to find validation flag for a specific parameter and field
+  const findValidationFlag = (parameterName: string, fieldName: string) => {
+    return report?.validationFlags?.find(
+      (flag) => flag.parameterName === parameterName && flag.field === fieldName
+    ) || null;
+  };
+
   // Helper function to render cell content based on column name
   const renderCellContent = (columnName: string, parameter: TestResult, isEditing: boolean, isAbnormal: boolean, indicator: any) => {
     switch (columnName) {
       case 'Parameter':
-        return (
+        const parameterFlag = findValidationFlag(parameter.serviceItemName, 'parameterName');
+        return parameterFlag ? (
+          <ValidationFlag flag={parameterFlag}>
+            <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 600 : 400, color: '#111827', fontSize: '14px', px: 1 }}>
+              {parameter.serviceItemName}
+            </Typography>
+          </ValidationFlag>
+        ) : (
           <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 600 : 400, color: '#111827', fontSize: '14px' }}>
             {parameter.serviceItemName}
           </Typography>
@@ -605,15 +917,17 @@ const ReviewReport: React.FC = () => {
 
       case 'Value':
         return isEditing ? (
-          <TextField
-            size="small"
-            value={editedValues[`${parameter._id}_value`] || parameter.value}
-            onChange={(e) => setEditedValues(prev => ({
-              ...prev,
-              [`${parameter._id}_value`]: e.target.value
-            }))}
-            sx={{ width: 100 }}
-          />
+          <ValidationFlag flag={findValidationFlag(parameter.serviceItemName, 'value')}>
+            <TextField
+              size="small"
+              value={editedValues[`${parameter._id}_value`] || parameter.value}
+              onChange={(e) => setEditedValues(prev => ({
+                ...prev,
+                [`${parameter._id}_value`]: e.target.value
+              }))}
+              sx={{ width: 100 }}
+            />
+          </ValidationFlag>
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 600 : 400, color: '#111827', fontSize: '14px' }}>
@@ -644,15 +958,17 @@ const ReviewReport: React.FC = () => {
 
       case 'Unit':
         return isEditing ? (
-          <TextField
-            size="small"
-            value={editedValues[`${parameter._id}_unit`] || parameter.unit}
-            onChange={(e) => setEditedValues(prev => ({
-              ...prev,
-              [`${parameter._id}_unit`]: e.target.value
-            }))}
-            sx={{ width: 80 }}
-          />
+          <ValidationFlag flag={findValidationFlag(parameter.serviceItemName, 'unit')}>
+            <TextField
+              size="small"
+              value={editedValues[`${parameter._id}_unit`] || parameter.unit}
+              onChange={(e) => setEditedValues(prev => ({
+                ...prev,
+                [`${parameter._id}_unit`]: e.target.value
+              }))}
+              sx={{ width: 80 }}
+            />
+          </ValidationFlag>
         ) : (
           <Typography variant="body2" sx={{ fontWeight: isAbnormal ? 500 : 400, color: '#6B7280', fontSize: '14px' }}>
             {parameter.unit && parameter.unit !== 'null' ? parameter.unit : ''}
@@ -756,15 +1072,58 @@ const ReviewReport: React.FC = () => {
   console.log('[REVIEW] 22. Has extractedData:', !!report.extractedData);
   console.log('[REVIEW] 23. Results count:', report.extractedData?.results?.length || 0);
 
-  // Show JSON view if report is approved and not in repeat review mode
+  // Show success message with View JSON button if report is approved and not in repeat review mode
   if (report.status === 'approved' && !showRepeatReview && report.finalData) {
     return (
-      <JsonOutputView
-        jsonData={report.finalData}
-        orderId={report.orderId}
-        onRepeatReview={() => setShowRepeatReview(true)}
-        onBack={() => navigate('/nurse/reports')}
-      />
+      <Box sx={{ p: 4 }}>
+        {/* Success Message Card */}
+        <Card sx={{ maxWidth: 800, mx: 'auto', mb: 3 }}>
+          <CardContent sx={{ textAlign: 'center', py: 4 }}>
+            <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
+            <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
+              Report Approved Successfully
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              The report has been approved and is ready for integration.
+            </Typography>
+
+            {/* Action Buttons */}
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant="contained"
+                startIcon={<CodeIcon />}
+                onClick={() => setShowJsonOutput(!showJsonOutput)}
+              >
+                {showJsonOutput ? 'Hide JSON' : 'View JSON'}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => navigate('/nurse/reports')}
+              >
+                Back to Reports
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => setShowRepeatReview(true)}
+              >
+                Repeat Review
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Conditionally Rendered JSON Output */}
+        {showJsonOutput && (
+          <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+            <JsonOutputView
+              jsonData={report.finalData}
+              orderId={report.orderId}
+              onRepeatReview={() => setShowRepeatReview(true)}
+              onBack={() => navigate('/nurse/reports')}
+            />
+          </Box>
+        )}
+      </Box>
     );
   }
 
@@ -1131,6 +1490,7 @@ const ReviewReport: React.FC = () => {
                 return (
                   <TableRow
                     key={parameter._id}
+                    id={`parameter-${parameter.serviceItemName.replace(/\s+/g, '-')}`}
                     sx={{
                       backgroundColor: indicator?.severity === 'critical'
                         ? 'rgba(239, 68, 68, 0.04)'
@@ -1264,6 +1624,32 @@ const ReviewReport: React.FC = () => {
               </Typography>
             </Alert>
           )}
+          <Tooltip title="Re-validate all parameters against Parameter Master database">
+            <Button
+              variant="outlined"
+              startIcon={revalidating ? <CircularProgress size={16} /> : <RefreshIcon />}
+              onClick={handleRevalidate}
+              disabled={revalidating || !report.extractedData}
+              sx={{
+                borderColor: '#3B82F6',
+                color: '#3B82F6',
+                '&:hover': {
+                  borderColor: '#2563EB',
+                  bgcolor: 'rgba(59, 130, 246, 0.04)'
+                },
+                '&:disabled': {
+                  borderColor: '#E5E7EB',
+                  color: '#9CA3AF'
+                },
+                borderRadius: 2,
+                textTransform: 'none',
+                px: 3,
+                py: 1
+              }}
+            >
+              {revalidating ? 'Re-validating...' : 'Re-validate Parameters'}
+            </Button>
+          </Tooltip>
           <Button
             variant="outlined"
             startIcon={<CancelIcon />}

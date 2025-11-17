@@ -7,7 +7,7 @@ const AuditLog = require('../models/AuditLog');
 const orderValidationService = require('../services/orderValidation.service');
 
 // Helper function to calculate audit summary
-const calculateAuditSummary = (report) => {
+const calculateAuditSummary = (report, frontendReviewDuration = null) => {
   const totalParameters = report.extractedData?.results?.length || 0;
 
   // Count unique parameters that were edited
@@ -23,9 +23,16 @@ const calculateAuditSummary = (report) => {
     ? ((totalParameters - editedParameters) / totalParameters) * 100
     : 100;
 
-  // Calculate review duration (from uploadDate to now)
-  const reviewDuration = report.uploadDate
-    ? Math.floor((Date.now() - new Date(report.uploadDate).getTime()) / 1000)
+  // Use frontend-provided review duration if available, otherwise calculate from uploadDate
+  const reviewDuration = frontendReviewDuration !== null
+    ? frontendReviewDuration
+    : (report.uploadDate
+        ? Math.floor((Date.now() - new Date(report.uploadDate).getTime()) / 1000)
+        : null);
+
+  // Calculate seconds per parameter
+  const secondsPerParameter = (reviewDuration !== null && totalParameters > 0)
+    ? Math.round((reviewDuration / totalParameters) * 100) / 100 // Round to 2 decimals
     : null;
 
   return {
@@ -33,7 +40,8 @@ const calculateAuditSummary = (report) => {
     editedParameters,
     accuracyPercentage: Math.round(accuracyPercentage * 100) / 100, // Round to 2 decimals
     calculatedAt: new Date(),
-    reviewDuration
+    reviewDuration,
+    secondsPerParameter
   };
 };
 
@@ -623,7 +631,7 @@ const updateOrderId = async (req, res) => {
 const approveReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { comments, confirmMismatch, mismatchReason } = req.body;
+    const { comments, confirmMismatch, mismatchReason, reviewDuration } = req.body;
 
     console.log('[REVIEW CONTROLLER] Approving report:', id);
 
@@ -862,8 +870,8 @@ const approveReport = async (req, res) => {
     // Save finalData to report
     report.finalData = finalData;
 
-    // Calculate and save audit summary
-    report.auditSummary = calculateAuditSummary(report);
+    // Calculate and save audit summary (pass frontend review duration if provided)
+    report.auditSummary = calculateAuditSummary(report, reviewDuration);
 
     // Update report status
     report.status = 'approved';
@@ -917,7 +925,7 @@ const approveReport = async (req, res) => {
 const rejectReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, reviewDuration } = req.body;
 
     console.log('[REVIEW CONTROLLER] Rejecting report:', id);
 
@@ -955,8 +963,8 @@ const rejectReport = async (req, res) => {
       });
     }
 
-    // Calculate and save audit summary
-    report.auditSummary = calculateAuditSummary(report);
+    // Calculate and save audit summary (pass frontend review duration if provided)
+    report.auditSummary = calculateAuditSummary(report, reviewDuration);
 
     // Update report status
     report.status = 'rejected';

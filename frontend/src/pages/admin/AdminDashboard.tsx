@@ -411,32 +411,120 @@ const AdminDashboard: React.FC = () => {
 
       {/* Lab Distribution Chart */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper sx={{ p: 3, height: 400 }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              Lab Distribution
-            </Typography>
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie
-                  data={stats?.labDistribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  paddingAngle={5}
+        <Grid size={{ xs: 12 }}>
+          <Paper sx={{ p: 3 }}>
+            {/* Header with Stats Summary */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  Lab Distribution
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Reports processed by laboratory
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 3 }}>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Total Labs
+                  </Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
+                    {stats?.labDistribution.length || 0}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Total Reports
+                  </Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.success.main }}>
+                    {stats?.labDistribution.reduce((sum, lab) => sum + lab.count, 0) || 0}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* Bar Chart */}
+            <ResponsiveContainer width="100%" height={Math.max(400, (stats?.labDistribution.length || 0) * 60)}>
+              <BarChart
+                data={stats?.labDistribution.slice().sort((a, b) => b.count - a.count)}
+                layout="vertical"
+                margin={{ top: 10, right: 80, left: 150, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} horizontal={true} vertical={false} />
+                <XAxis type="number" stroke={theme.palette.text.secondary} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  stroke={theme.palette.text.secondary}
+                  width={140}
+                  tick={{ fontSize: 13 }}
+                />
+                <ChartTooltip
+                  contentStyle={{
+                    backgroundColor: theme.palette.background.paper,
+                    border: `1px solid ${theme.palette.divider}`,
+                    borderRadius: 8,
+                    padding: '12px',
+                  }}
+                  formatter={(value: any, name: string, props: any) => {
+                    if (!props?.payload || typeof props.payload.percentage !== 'number') {
+                      return [value, name];
+                    }
+                    return [
+                      `${value} reports (${props.payload.percentage.toFixed(1)}%)`,
+                      props.payload.name,
+                    ];
+                  }}
+                />
+                <Bar
                   dataKey="count"
-                  label={(entry) => entry.name}
+                  radius={[0, 8, 8, 0]}
+                  label={(props: any) => {
+                    const { x, y, width, value, payload } = props;
+                    if (!payload || typeof payload.percentage !== 'number') return null;
+                    return (
+                      <text
+                        x={x + width + 10}
+                        y={y + 15}
+                        fill={theme.palette.text.primary}
+                        fontSize={12}
+                        fontWeight={600}
+                      >
+                        {`${value} (${payload.percentage.toFixed(1)}%)`}
+                      </text>
+                    );
+                  }}
                 >
                   {stats?.labDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.color}
+                      style={{
+                        filter: 'brightness(1.1)',
+                        transition: 'all 0.3s ease',
+                      }}
+                    />
                   ))}
-                </Pie>
-                <ChartTooltip />
-                <Legend />
-              </PieChart>
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
+
+            {/* Top Lab Indicator */}
+            {stats?.labDistribution && stats.labDistribution.length > 0 && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: theme.palette.primary.main + '10', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LabIcon sx={{ color: theme.palette.primary.main }} />
+                <Typography variant="body2" color="text.secondary">
+                  <strong style={{ color: theme.palette.primary.main }}>
+                    {stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].name}
+                  </strong>
+                  {' '}is the most active lab with{' '}
+                  <strong>
+                    {stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].count} reports
+                  </strong>
+                  {' '}({stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].percentage.toFixed(1)}% of total)
+                </Typography>
+              </Box>
+            )}
           </Paper>
         </Grid>
       </Grid>

@@ -55,6 +55,20 @@ const AuditDashboard: React.FC = () => {
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
 
+  // Helper function to format review time in HH:MM:SS or MM:SS format
+  const formatReviewTime = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined) return '-';
+
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AuditOverallSummary | null>(null);
   const [reports, setReports] = useState<AuditReportEntry[]>([]);
@@ -421,6 +435,8 @@ const AuditDashboard: React.FC = () => {
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Parameters</TableCell>
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Edited</TableCell>
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Accuracy</TableCell>
+                <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Review Time</TableCell>
+                <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Time/Param</TableCell>
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Reviewed By</TableCell>
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280', py: 1.5 }}>Actions</TableCell>
@@ -458,6 +474,14 @@ const AuditDashboard: React.FC = () => {
                         border: `1px solid ${getAccuracyColor(report.accuracyPercentage)}20`
                       }}
                     />
+                  </TableCell>
+                  <TableCell sx={{ py: 1.75, fontSize: '14px', color: '#1D4ED8', fontWeight: 500 }}>
+                    {formatReviewTime(report.reviewDuration)}
+                  </TableCell>
+                  <TableCell sx={{ py: 1.75, fontSize: '14px', color: '#4F46E5', fontWeight: 500 }}>
+                    {report.secondsPerParameter !== null && report.secondsPerParameter !== undefined
+                      ? `${report.secondsPerParameter}s`
+                      : '-'}
                   </TableCell>
                   <TableCell sx={{ py: 1.75, fontSize: '14px', color: '#6B7280' }}>
                     {report.reviewedBy}
@@ -621,6 +645,36 @@ const AuditDashboard: React.FC = () => {
                         </CardContent>
                       </Card>
                     </Grid>
+                    {selectedReportDetails.auditSummary.reviewDuration !== null && selectedReportDetails.auditSummary.reviewDuration !== undefined && (
+                      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                        <Card sx={{ bgcolor: '#DBEAFE', boxShadow: 'none' }}>
+                          <CardContent sx={{ p: 2 }}>
+                            <Typography variant="caption" sx={{ color: '#1E40AF', fontSize: '11px' }}>Review Time</Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 700, color: '#1D4ED8' }}>
+                              {formatReviewTime(selectedReportDetails.auditSummary.reviewDuration)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#3B82F6', fontSize: '10px', display: 'block', mt: 0.5 }}>
+                              {selectedReportDetails.auditSummary.reviewDuration}s total
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    )}
+                    {selectedReportDetails.auditSummary.secondsPerParameter !== null && selectedReportDetails.auditSummary.secondsPerParameter !== undefined && (
+                      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                        <Card sx={{ bgcolor: '#E0E7FF', boxShadow: 'none' }}>
+                          <CardContent sx={{ p: 2 }}>
+                            <Typography variant="caption" sx={{ color: '#4338CA', fontSize: '11px' }}>Time Per Parameter</Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 700, color: '#4F46E5' }}>
+                              {selectedReportDetails.auditSummary.secondsPerParameter}s
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#6366F1', fontSize: '10px', display: 'block', mt: 0.5 }}>
+                              avg per parameter
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    )}
                   </Grid>
                 </Paper>
               )}
