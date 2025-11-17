@@ -1,0 +1,76 @@
+# Gitleaks Configuration for Lab Digitization Project
+# https://github.com/gitleaks/gitleaks
+
+title = "Lab Digitization Gitleaks Configuration"
+
+[extend]
+# Use default gitleaks rules as baseline
+useDefault = true
+
+# Additional custom rules for this project
+[[rules]]
+id = "mongodb-connection-string"
+description = "MongoDB Connection String"
+regex = '''mongodb(\+srv)?://[^\s'"]+'''
+tags = ["mongodb", "connection-string"]
+
+[[rules]]
+id = "jwt-secret-env"
+description = "JWT Secret in environment files"
+regex = '''JWT_SECRET\s*=\s*['"]?[a-zA-Z0-9_\-]{32,}['"]?'''
+path = '''\.env.*'''
+tags = ["jwt", "secret"]
+
+[[rules]]
+id = "api-key-env"
+description = "API Keys in environment files"
+regex = '''(OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY)\s*=\s*['"]?[a-zA-Z0-9_\-]{20,}['"]?'''
+path = '''\.env.*'''
+tags = ["api-key", "secret"]
+
+# Allowlist configuration
+[allowlist]
+description = "Allowlisted files and patterns"
+paths = [
+  # Ignore the .gitignore file itself
+  '''^\.gitignore$''',
+
+  # Ignore documentation with redacted secrets
+  '''tmp_security_plan\.md''',
+  '''SECURITY_ASSESSMENT_ROADMAP\.md''',
+
+  # Ignore test files with mock/fake tokens
+  '''test/.*''',
+  '''.*\.test\.(js|ts)$''',
+  '''.*\.spec\.(js|ts)$''',
+
+  # Ignore node_modules and build outputs
+  '''node_modules/''',
+  '''dist/''',
+  '''build/''',
+
+  # Ignore Claude Code directory
+  '''\.claude/'''
+]
+
+# Stopwords to ignore (false positives)
+stopwords = [
+  "REDACTED",
+  "XXXXX",
+  "example",
+  "sample",
+  "placeholder",
+  "your-secret-here",
+  "your_secret_key_here"
+]
+
+# Regular expressions to ignore (false positives)
+regexes = [
+  # Ignore redacted tokens
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.REDACTED''',
+  '''sk-proj-XXXXX''',
+  '''AIzaSy-XXXXX''',
+
+  # Ignore example UUIDs and test data
+  '''00000000-0000-0000-0000-000000000000''',
+]
