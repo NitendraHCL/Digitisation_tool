@@ -38,6 +38,7 @@ paths = [
   # Ignore documentation with redacted secrets
   '''tmp_security_plan\.md''',
   '''SECURITY_ASSESSMENT_ROADMAP\.md''',
+  '''STEP_1_COMPLETION_SUMMARY\.md''',
 
   # Ignore test files with mock/fake tokens
   '''test/.*''',
