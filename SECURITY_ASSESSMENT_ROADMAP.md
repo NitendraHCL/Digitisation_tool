@@ -520,6 +520,39 @@ docker run -v $(pwd):/src opensecurity/nodejsscan:latest \
 
 ## Phase 3: DAST (Dynamic Application Security Testing)
 
+**Status:** ✅ **COMPLETE** (Completed: Nov 17, 2025)
+
+**What Was Done:**
+- Installed OWASP ZAP 2.16.1 via Docker for comprehensive web application scanning
+- Installed Nuclei 3.5.1 for fast template-based vulnerability detection
+- Installed Nikto 2.5.0 for web server security testing
+- Ran ZAP baseline scans on both backend (localhost:5001) and frontend (localhost:3000)
+- Ran Nuclei scans with 4,800+ security templates (0 vulnerabilities found)
+- Ran Nikto web server scan (mostly false positives for Node.js/Express)
+- Performed manual API security testing (NoSQL injection, auth bypass, JWT validation, path traversal)
+- Created comprehensive DAST_SECURITY_REPORT.md with detailed analysis
+
+**Findings Summary:**
+- Backend: 1 INFORMATIONAL issue (cacheable content)
+- Frontend: 13 MEDIUM warnings (security headers, CORS, CSP missing)
+- No CRITICAL or HIGH severity runtime vulnerabilities detected
+- NoSQL injection attempts successfully blocked ✅
+- JWT validation working correctly ✅
+- Path traversal attempts blocked ✅
+- **Security Gap Identified:** Missing rate limiting on authentication endpoints (P0 priority)
+
+**Key Achievements:**
+- ✅ Backend security: EXCELLENT (strong runtime security, good security headers)
+- ✅ NoSQL injection protection: WORKING
+- ✅ Authentication security: JWT validation strong
+- ⚠️ Frontend security headers: Need improvement (CSP, anti-clickjacking)
+- ⚠️ Rate limiting: MISSING (critical gap for HIPAA compliance)
+- ⚠️ CORS: Frontend wildcard (acceptable in dev, fix for production)
+
+**See:** DAST_SECURITY_REPORT.md for complete analysis
+
+---
+
 ### 3.1 Free DAST Tools Overview
 
 | Tool | Type | Cost | Features | Best For |

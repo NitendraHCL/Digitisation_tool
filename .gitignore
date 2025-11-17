@@ -34,6 +34,14 @@ test-output.log
 eslint-security-report.html
 gitleaks-report*.json
 
+# DAST scan results
+*-zap-*.html
+*-zap-*.json
+nuclei-*.jsonl
+nikto-*.txt
+/tmp/api-security-tests.sh
+/tmp/api-security-test-results.txt
+
 # Temporary files
 tmp/
 temp/
