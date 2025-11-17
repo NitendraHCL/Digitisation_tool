@@ -441,7 +441,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
   async extractFromPDF(pdfPath, orderId) {
     const startTime = Date.now();
     const fs = require('fs');
-    const { execSync } = require('child_process');
+    // execSync removed - using pdf-parse instead to prevent command injection
 
     console.log('[GPT PDF] 1. ========== STARTING PDF EXTRACTION ==========');
     console.log('[GPT PDF] 2. Order ID:', orderId);
@@ -466,13 +466,15 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
         throw new Error(`PDF file size (${fileSizeInMB}MB) exceeds OpenAI limit of ${MAX_FILE_SIZE_MB}MB. Please use a smaller PDF or try the 'hybrid' extraction method.`);
       }
 
-      // Get page count using pdfinfo
+      // Get page count using pdf-parse (safer than execSync)
       console.log('[GPT PDF] 5. Checking PDF page count...');
       let pageCount;
       try {
-        const pdfInfo = execSync(`pdfinfo "${pdfPath}"`, { encoding: 'utf-8' });
-        const pageMatch = pdfInfo.match(/Pages:\s+(\d+)/);
-        pageCount = pageMatch ? parseInt(pageMatch[1]) : null;
+        // Use pdf-parse library instead of execSync to avoid command injection
+        const pdfParse = require('pdf-parse');
+        const dataBuffer = fs.readFileSync(pdfPath);
+        const pdfData = await pdfParse(dataBuffer);
+        pageCount = pdfData.numpages;
         console.log('[GPT PDF] 6. PDF has', pageCount, 'pages');
       } catch (error) {
         console.warn('[GPT PDF] 6. Warning: Could not determine page count, proceeding anyway');

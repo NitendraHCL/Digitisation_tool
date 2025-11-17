@@ -251,6 +251,36 @@ npm run lint:report
 
 ## Phase 2: SAST (Static Application Security Testing)
 
+**Status:** ✅ **COMPLETE** (Completed: Nov 17, 2025)
+
+**What Was Done:**
+- Installed Semgrep 1.143.0 for static code analysis
+- Scanned 101 files (60 backend, 41 frontend) with 1,062 security rules
+- Backend: 59 findings (1 ERROR, 17 WARNING, 41 INFO)
+- Frontend: 5 findings (0 ERROR, 0 WARNING, 5 INFO)
+- Created comprehensive SAST_SECURITY_REPORT.md with detailed analysis
+- Fixed CRITICAL command injection vulnerability in gptExtractor.service.js
+- Replaced execSync with pdf-parse library to prevent OS command injection
+
+**Critical Vulnerability Fixed:**
+- Command injection via child_process (CWE-78) - **FIXED**
+- Location: src/services/gptExtractor.service.js:473
+- Replaced unsafe execSync with safe pdf-parse library
+
+**Key Findings:**
+- 10 ReDoS vulnerabilities (detect-non-literal-regexp) - MEDIUM priority
+- 3 Data exfiltration risks (express-data-exfiltration) - LOW priority
+- 2 Path traversal issues - MEDIUM priority
+- 46 informational code quality issues
+
+**Decision:** Used Semgrep instead of SonarQube for faster implementation
+- Semgrep: Excellent security focus, easier setup, 1,062+ rules
+- SonarQube: Deferred to future (better for code quality, requires Docker)
+
+**See:** SAST_SECURITY_REPORT.md for complete analysis
+
+---
+
 ### 2.1 Free SAST Tools Overview
 
 | Tool | Cost | Languages | Rules | OWASP Coverage | Recommendation |
