@@ -202,7 +202,7 @@ Building a PDF lab report digitization system using Node.js, MongoDB, and OpenAI
 ## Test API Tokens
 ```bash
 # Nurse token (valid for 7 days from creation)
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTBhMjI1OWIwNTBjMjVmZjRmY2I4ZGQiLCJlbWFpbCI6Im51cnNlMUBob3NwaXRhbC5jb20iLCJyb2xlIjoibnVyc2UiLCJpYXQiOjE3NjIyNzM4NjksImV4cCI6MTc2Mjg3ODY2OX0.oYLVAnEWA3XFf0GvyXMn-YpJj5DRCu_4F__HzZYrjJU"
+TOKEN="[REDACTED-JWT-TOKEN]"
 ```
 
 ## Test Results

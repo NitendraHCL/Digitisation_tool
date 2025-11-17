@@ -34,6 +34,9 @@ test-output.log
 tmp/
 temp/
 *.tmp
+tmp_*.md
+temp_*.md
+tmp_security_plan.md
 
 # Uploads
 uploads/

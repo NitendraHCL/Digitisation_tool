@@ -149,8 +149,8 @@ Fix: Major version upgrade required for react-scripts
 
 ```env
 # CURRENT (INSECURE)
-OPENAI_API_KEY=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
-GEMINI_API_KEY=AIzaSyByCB6MhAy66HgI3fT4O4Sq6Bsiy0PI7WM
+OPENAI_API_KEY=sk-proj-XXXXX-REDACTED-XXXXX
+GEMINI_API_KEY=AIzaSy-XXXXX-REDACTED-XXXXX
 ```
 
 **Risk Assessment:**
@@ -203,7 +203,7 @@ JWT_SECRET=your_super_secret_jwt_key_change_in_production
 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
 # Add to .env (example output):
-JWT_SECRET=8f7a9b2c4d5e6f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d
+JWT_SECRET=XXXXX-REDACTED-EXAMPLE-SECRET-XXXXX
 
 # WARNING: This will invalidate all existing user sessions
 # Users will need to re-login after secret change
