@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Tooltip, Typography } from '@mui/material';
-import { Warning as WarningIcon, Error as ErrorIcon } from '@mui/icons-material';
+import { Warning as WarningIcon, Error as ErrorIcon, Info as InfoIcon } from '@mui/icons-material';
 
 interface ValidationFlagProps {
   flag?: {
@@ -8,8 +8,10 @@ interface ValidationFlagProps {
     flagType: string;
     expected: any;
     actual: any;
-    severity: 'warning' | 'error';
+    severity: 'info' | 'warning' | 'error';
     message: string;
+    isExcluded?: boolean;
+    exclusionReason?: string;
   } | null;
   children: React.ReactNode;
   fieldName?: string;
@@ -22,9 +24,9 @@ const ValidationFlag: React.FC<ValidationFlagProps> = ({ flag, children, fieldNa
   }
 
   // Determine color based on severity
-  const borderColor = flag.severity === 'error' ? '#f44336' : '#ff9800';
-  const iconColor = flag.severity === 'error' ? 'error' : 'warning';
-  const Icon = flag.severity === 'error' ? ErrorIcon : WarningIcon;
+  const borderColor = flag.severity === 'error' ? '#f44336' : flag.severity === 'warning' ? '#ff9800' : '#3b82f6';
+  const iconColor = flag.severity === 'error' ? 'error' : flag.severity === 'warning' ? 'warning' : 'info';
+  const Icon = flag.severity === 'error' ? ErrorIcon : flag.severity === 'warning' ? WarningIcon : InfoIcon;
 
   // Build tooltip content
   const getTooltipContent = () => {
@@ -89,9 +91,13 @@ const ValidationFlag: React.FC<ValidationFlagProps> = ({ flag, children, fieldNa
           borderColor: borderColor,
           borderRadius: 1,
           p: 0.5,
-          bgcolor: flag.severity === 'error' ? 'rgba(244, 67, 54, 0.05)' : 'rgba(255, 152, 0, 0.05)',
+          bgcolor: flag.severity === 'error' ? 'rgba(244, 67, 54, 0.05)' :
+                   flag.severity === 'warning' ? 'rgba(255, 152, 0, 0.05)' :
+                   'rgba(59, 130, 246, 0.05)',
           '&:hover': {
-            borderColor: flag.severity === 'error' ? '#d32f2f' : '#f57c00',
+            borderColor: flag.severity === 'error' ? '#d32f2f' :
+                        flag.severity === 'warning' ? '#f57c00' :
+                        '#2563eb',
           },
         }}
       >

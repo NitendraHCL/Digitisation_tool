@@ -31,11 +31,13 @@ export interface ValidationFlag {
   parameterId?: string | null;
   parameterName: string;
   field: 'parameterName' | 'unit' | 'value';
-  flagType: 'PARAMETER_NOT_FOUND' | 'UNIT_MISMATCH' | 'VALUE_TYPE_MISMATCH';
+  flagType: 'PARAMETER_NOT_FOUND' | 'UNIT_MISMATCH' | 'VALUE_TYPE_MISMATCH' | 'PARAMETER_EXCLUDED' | 'UNIT_EXCLUDED';
   expected: any;
   actual: any;
-  severity: 'warning' | 'error';
+  severity: 'info' | 'warning' | 'error';
   message: string;
+  isExcluded?: boolean;
+  exclusionReason?: string;
 }
 
 export interface Report {

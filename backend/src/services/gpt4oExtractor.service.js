@@ -48,11 +48,6 @@ PATIENT_NAME: [patient name as shown in report]
 PATIENT_GENDER: [male/female/other]
 DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
-**COLUMN ORDER: Observe the exact column order in the report table. Add this after demographics:**
-COLUMN_ORDER: [comma-separated list of column names as they appear in report]
-Valid column names: Parameter, Value, Unit, Normal Range
-Example: COLUMN_ORDER: Parameter,Value,Normal Range,Unit
-
 Then extract all test parameters from the images and return the data in this exact format:
 
 TEST_NAME | VALUE | UNIT | METHOD | REF_RANGE_TEXT | REF_HIGH | REF_LOW
@@ -136,8 +131,12 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Parse the pipe-separated response (same logic as Gemini)
       let labNameFromResponse = null;
-      let columnOrderFromResponse = null;
       const allLines = responseText.trim().split('\n').filter(l => l.trim().length > 0);
+
+      // Initialize patient demographics
+      let patientName = null;
+      let patientGender = null;
+      let dateOfTest = null;
 
       // Check if first line is lab name
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
@@ -146,16 +145,36 @@ The pages in this lab report are provided in their original sequential order. Yo
         allLines.shift(); // Remove the lab name line
       }
 
-      // Check if next line is column order
-      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-        const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
-        console.log('[GPT-4o VISION] 18b. Column order extracted from response:', columnOrderFromResponse);
-        allLines.shift(); // Remove the column order line
+      // Check for patient name
+      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
+        patientName = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        console.log('[GPT-4o VISION] 18b. Patient name extracted:', patientName);
+        allLines.shift();
+      }
+
+      // Check for patient gender
+      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
+        patientGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
+        console.log('[GPT-4o VISION] 18c. Patient gender extracted:', patientGender);
+        allLines.shift();
+      }
+
+      // Check for date of test
+      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
+        dateOfTest = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        console.log('[GPT-4o VISION] 18d. Date of test extracted:', dateOfTest);
+        allLines.shift();
       }
 
       const lines = allLines.filter(l => l.includes('|'));
       console.log('[GPT-4o VISION] 18. Extracted', lines.length, 'parameter lines');
+
+      // Debug: Log warning if no lines found
+      if (lines.length === 0) {
+        console.warn('[GPT-4o VISION] WARNING: No pipe-separated lines found in response!');
+        console.warn('[GPT-4o VISION] WARNING: Response may not be in expected format.');
+        console.warn('[GPT-4o VISION] WARNING: First few remaining lines:', allLines.slice(0, 5));
+      }
 
       const results = [];
 
@@ -247,8 +266,10 @@ The pages in this lab report are provided in their original sequential order. Yo
       // Return extracted data in same format as Gemini extractor
       return {
         labName: labName,
+        patientName: patientName,
+        patientGender: patientGender,
+        dateOfTest: dateOfTest,
         results: results,
-        columnOrder: columnOrderFromResponse || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order
         tokenUsage: {
           promptTokens: inputTokens,
           completionTokens: outputTokens,
@@ -334,7 +355,6 @@ The pages in this lab report are provided in their original sequential order. Yo
       let patientNameGlobal = null;
       let patientGenderGlobal = null;
       let dateOfTestGlobal = null;
-      let columnOrderGlobal = null;
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       let totalCost = 0;
@@ -405,7 +425,6 @@ The pages in this lab report are provided in their original sequential order. Yo
             let patientNameFromResponse = null;
             let patientGenderFromResponse = null;
             let dateOfTestFromResponse = null;
-            let columnOrderFromResponse = null;
             const allLines = responseText.trim().split('\n').filter(l => l.trim().length > 0);
 
             // Check if first line is lab name (only expected on first page)
@@ -433,14 +452,6 @@ The pages in this lab report are provided in their original sequential order. Yo
             if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
               dateOfTestFromResponse = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
               console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.6c. Date of test from page ${pageNumber}:`, dateOfTestFromResponse);
-              allLines.shift();
-            }
-
-            // Check if next line is column order (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-              const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
-              console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.7. Column order from page ${pageNumber}:`, columnOrderFromResponse);
               allLines.shift();
             }
 
@@ -508,7 +519,6 @@ The pages in this lab report are provided in their original sequential order. Yo
               patientName: patientNameFromResponse,
               patientGender: patientGenderFromResponse,
               dateOfTest: dateOfTestFromResponse,
-              columnOrder: columnOrderFromResponse,
               extractionMetadata: {
                 responseLength: responseText.length,
                 parametersExtracted: pageResults.length,
@@ -552,10 +562,6 @@ The pages in this lab report are provided in their original sequential order. Yo
           if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
         }
 
-        // Extract column order from first page
-        if (pageData.pageNumber === 1 && pageData.columnOrder) {
-          columnOrderGlobal = pageData.columnOrder;
-        }
 
         // Add to page-wise data
         pageWiseData.push({
@@ -598,8 +604,7 @@ The pages in this lab report are provided in their original sequential order. Yo
         patientGender: patientGenderGlobal,
         dateOfTest: dateOfTestGlobal,
         results: allResults,
-        pageWiseData: pageWiseData, // NEW: Array of per-page extraction data
-        columnOrder: columnOrderGlobal || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order
+        pageWiseData: pageWiseData,
         tokenUsage: {
           promptTokens: totalPromptTokens,
           completionTokens: totalCompletionTokens,

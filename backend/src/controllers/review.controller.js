@@ -1134,6 +1134,134 @@ const getValidationData = async (req, res) => {
   }
 };
 
+// Delete parameter from report
+const deleteParameter = async (req, res) => {
+  const { id, parameterId } = req.params;
+  const userId = req.user.userId;
+
+  console.log('[DELETE PARAMETER] Starting delete for report:', id, 'parameter:', parameterId);
+
+  try {
+    const report = await Report.findById(id);
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    // Check if report is in correct status (allow both pending_review and ready)
+    if (report.status !== 'pending_review' && report.status !== 'ready') {
+      return res.status(400).json({
+        success: false,
+        message: 'Report must be in pending_review or ready status to delete parameters'
+      });
+    }
+
+    // Find and remove parameter from extractedData.results
+    let parameterFound = false;
+    let deletedParameter = null;
+
+    if (report.extractedData?.results) {
+      const paramIndex = report.extractedData.results.findIndex(
+        param => param._id?.toString() === parameterId || param.id === parameterId
+      );
+
+      if (paramIndex !== -1) {
+        deletedParameter = report.extractedData.results[paramIndex];
+        report.extractedData.results.splice(paramIndex, 1);
+        parameterFound = true;
+        console.log('[DELETE PARAMETER] Removed from extractedData.results');
+      }
+    }
+
+    // Also remove from pageWiseData if it exists
+    if (report.extractedData?.pageWiseData) {
+      report.extractedData.pageWiseData.forEach(page => {
+        if (page.testResults) {
+          const pageParamIndex = page.testResults.findIndex(
+            param => param._id?.toString() === parameterId || param.id === parameterId
+          );
+          if (pageParamIndex !== -1) {
+            page.testResults.splice(pageParamIndex, 1);
+            console.log('[DELETE PARAMETER] Removed from pageWiseData');
+          }
+        }
+      });
+    }
+
+    // Also remove from finalData.results if it exists
+    if (report.finalData?.results) {
+      const finalIndex = report.finalData.results.findIndex(
+        param => param._id?.toString() === parameterId || param.id === parameterId
+      );
+      if (finalIndex !== -1) {
+        report.finalData.results.splice(finalIndex, 1);
+        console.log('[DELETE PARAMETER] Removed from finalData.results');
+      }
+    }
+
+    if (!parameterFound) {
+      return res.status(404).json({
+        success: false,
+        message: 'Parameter not found in report'
+      });
+    }
+
+    // Add to edit history
+    if (!report.editHistory) {
+      report.editHistory = [];
+    }
+
+    report.editHistory.push({
+      field: 'parameter_deleted',
+      originalValue: deletedParameter ? JSON.stringify({
+        name: deletedParameter.serviceItemName || deletedParameter.name,
+        value: deletedParameter.value,
+        unit: deletedParameter.unit
+      }) : 'Unknown parameter',
+      newValue: 'DELETED',
+      editedBy: userId,
+      editedAt: new Date(),
+      reason: 'Parameter deleted by nurse'
+    });
+
+    // Re-run validation to update flags
+    const parameterValidator = require('../services/parameterValidator.service');
+    const validationResult = await parameterValidator.validateAgainstMaster(report.extractedData);
+    report.validationFlags = validationResult.validationFlags;
+
+    // Update counts
+    report.extractedData.totalTestResultsCount = report.extractedData.results?.length || 0;
+
+    // Mark the report as modified
+    report.markModified('extractedData');
+    report.markModified('finalData');
+    report.markModified('editHistory');
+    report.markModified('validationFlags');
+
+    // Save the updated report
+    const savedReport = await report.save();
+
+    console.log('[DELETE PARAMETER] Parameter deleted successfully');
+
+    res.status(200).json({
+      success: true,
+      message: 'Parameter deleted successfully',
+      data: savedReport
+    });
+
+  } catch (error) {
+    console.error('[DELETE PARAMETER] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete parameter',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getReportForReview,
   editParameter,
@@ -1143,5 +1271,6 @@ module.exports = {
   approveReport,
   rejectReport,
   getEditHistory,
-  getValidationData
+  getValidationData,
+  deleteParameter
 };

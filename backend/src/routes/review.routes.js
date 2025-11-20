@@ -9,7 +9,8 @@ const {
   approveReport,
   rejectReport,
   getEditHistory,
-  getValidationData
+  getValidationData,
+  deleteParameter
 } = require('../controllers/review.controller');
 const { authenticate, isNurseOrAdmin } = require('../middleware/auth.middleware');
 
@@ -22,6 +23,9 @@ router.get('/:id', getReportForReview);
 
 // Edit single parameter
 router.put('/:id/parameter', editParameter);
+
+// Delete parameter
+router.delete('/:id/parameter/:parameterId', deleteParameter);
 
 // Edit patient demographics
 router.put('/:id/demographics', editDemographics);

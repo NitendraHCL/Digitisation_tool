@@ -1,8 +1,10 @@
 const ParameterMaster = require('../models/ParameterMaster');
+const ParameterExclusion = require('../models/ParameterExclusion');
 
 /**
  * Parameter Validation Service
  * Validates extracted lab report data against Parameter Master table
+ * Checks exclusion list before flagging mismatches
  * Returns validation flags for UI highlighting (non-blocking)
  */
 class ParameterValidatorService {
@@ -19,7 +21,8 @@ class ParameterValidatorService {
           total: 0,
           parameterNotFound: 0,
           unitMismatch: 0,
-          valueTypeMismatch: 0
+          valueTypeMismatch: 0,
+          excluded: 0
         }
       };
     }
@@ -32,7 +35,8 @@ class ParameterValidatorService {
       total: extractedData.results.length,
       parameterNotFound: 0,
       unitMismatch: 0,
-      valueTypeMismatch: 0
+      valueTypeMismatch: 0,
+      excluded: 0
     };
 
     // Validate each parameter
@@ -49,7 +53,36 @@ class ParameterValidatorService {
       const masterParam = await ParameterMaster.findByNameOrAlias(parameterName);
 
       if (!masterParam) {
-        // Flag: Parameter not found in master
+        // Check if parameter is excluded before flagging
+        const exclusionCheck = await ParameterExclusion.isExcluded(
+          parameterName,
+          result.unit,
+          extractedData.labName || null
+        );
+
+        if (exclusionCheck.isExcluded) {
+          // Parameter is intentionally excluded - log but don't flag as error
+          console.log('[VALIDATOR] Parameter is excluded:', parameterName, '- Reason:', exclusionCheck.reason);
+
+          validationFlags.push({
+            resultIndex: i,
+            parameterId: null,
+            parameterName: parameterName,
+            field: 'parameterName',
+            flagType: 'PARAMETER_EXCLUDED',
+            expected: 'N/A - Parameter is excluded',
+            actual: parameterName,
+            severity: 'info',
+            message: `Parameter "${parameterName}" is excluded from validation. Reason: ${exclusionCheck.reason}`,
+            isExcluded: true,
+            exclusionReason: exclusionCheck.reason
+          });
+
+          summary.excluded++;
+          continue; // Skip further validation for excluded parameters
+        }
+
+        // Flag: Parameter not found in master and not excluded
         console.log('[VALIDATOR] Parameter not found in master:', parameterName);
 
         validationFlags.push({
@@ -75,21 +108,46 @@ class ParameterValidatorService {
         const unitValid = masterParam.validateUnit(result.unit);
 
         if (!unitValid) {
-          console.log('[VALIDATOR] Unit mismatch:', parameterName, '- Expected:', masterParam.possibleUnits, '- Found:', result.unit);
+          // Check if this specific unit is excluded
+          const unitExclusionCheck = await ParameterExclusion.isExcluded(
+            parameterName,
+            result.unit,
+            extractedData.labName || null
+          );
 
-          validationFlags.push({
-            resultIndex: i,
-            parameterId: masterParam.parameterId,
-            parameterName: parameterName,
-            field: 'unit',
-            flagType: 'UNIT_MISMATCH',
-            expected: masterParam.possibleUnits,
-            actual: result.unit,
-            severity: 'error',
-            message: `Unit "${result.unit}" not in expected units for ${masterParam.parameterName}. Expected: ${masterParam.possibleUnits.join(', ')}`
-          });
+          if (unitExclusionCheck.isExcluded) {
+            console.log('[VALIDATOR] Unit excluded for parameter:', parameterName, '- Unit:', result.unit, '- Reason:', unitExclusionCheck.reason);
 
-          summary.unitMismatch++;
+            validationFlags.push({
+              resultIndex: i,
+              parameterId: masterParam.parameterId,
+              parameterName: parameterName,
+              field: 'unit',
+              flagType: 'UNIT_EXCLUDED',
+              expected: masterParam.possibleUnits,
+              actual: result.unit,
+              severity: 'info',
+              message: `Unit "${result.unit}" is excluded for ${masterParam.parameterName}. Reason: ${unitExclusionCheck.reason}`,
+              isExcluded: true,
+              exclusionReason: unitExclusionCheck.reason
+            });
+          } else {
+            console.log('[VALIDATOR] Unit mismatch:', parameterName, '- Expected:', masterParam.possibleUnits, '- Found:', result.unit);
+
+            validationFlags.push({
+              resultIndex: i,
+              parameterId: masterParam.parameterId,
+              parameterName: parameterName,
+              field: 'unit',
+              flagType: 'UNIT_MISMATCH',
+              expected: masterParam.possibleUnits,
+              actual: result.unit,
+              severity: 'error',
+              message: `Unit "${result.unit}" not in expected units for ${masterParam.parameterName}. Expected: ${masterParam.possibleUnits.join(', ')}`
+            });
+
+            summary.unitMismatch++;
+          }
         }
       }
 
@@ -122,6 +180,7 @@ class ParameterValidatorService {
     console.log('[VALIDATOR] - Not found in master:', summary.parameterNotFound);
     console.log('[VALIDATOR] - Unit mismatches:', summary.unitMismatch);
     console.log('[VALIDATOR] - Value type mismatches:', summary.valueTypeMismatch);
+    console.log('[VALIDATOR] - Excluded parameters:', summary.excluded);
     console.log('[VALIDATOR] - Total flags:', validationFlags.length);
 
     return {

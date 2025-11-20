@@ -63,12 +63,16 @@ import {
   Code as CodeIcon,
   CheckCircle as CheckCircleIcon,
   Refresh as RefreshIcon,
+  AddCircle as AddIcon,
+  Block as BlockIcon,
+  LibraryAdd as ParameterMasterIcon,
 } from '@mui/icons-material';
 import api from '../../services/api';
 import { useSnackbar } from 'notistack';
 import { Report, TestParameter, TestResult, EditHistory } from '../../types';
 import PDFViewer from '../../components/common/PDFViewer';
 import ValidationFlag from '../../components/validation/ValidationFlag';
+import ParameterSearchField from '../../components/parameters/ParameterSearchField';
 
 import JsonOutputView from '../../components/JsonOutputView';
 // Using EditHistory from types
@@ -180,6 +184,18 @@ const ReviewReport: React.FC = () => {
   const [hasValidationWarnings, setHasValidationWarnings] = useState(false);
   const [loadingValidation, setLoadingValidation] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
+  const [showParameterMasterDialog, setShowParameterMasterDialog] = useState(false);
+  const [showExclusionDialog, setShowExclusionDialog] = useState(false);
+  const [selectedParameter, setSelectedParameter] = useState<TestResult | null>(null);
+  const [showExcludedParamsDialog, setShowExcludedParamsDialog] = useState(false);
+  const [selectedValidationFlag, setSelectedValidationFlag] = useState<any | null>(null);
+  // Parameter Master dialog state
+  const [parameterAction, setParameterAction] = useState<'create' | 'update_alias'>('create');
+  const [targetParameter, setTargetParameter] = useState<any | null>(null);
+  const [newParameterId, setNewParameterId] = useState('');
+  const [valueType, setValueType] = useState<'numeric' | 'text' | 'alphanumeric' | 'range'>('numeric');
+  const [parameterDescription, setParameterDescription] = useState('');
+  const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
 
   // Timer helper functions
   const pauseTimer = () => {
@@ -817,6 +833,105 @@ const ReviewReport: React.FC = () => {
     }
   };
 
+  const handleAddToParameterMaster = (parameter: TestResult, validationFlag: any) => {
+    setSelectedParameter(parameter);
+    setSelectedValidationFlag(validationFlag);
+    // Reset dialog state
+    setParameterAction('create');
+    setTargetParameter(null);
+    setNewParameterId('');
+    setValueType('numeric');
+    setParameterDescription('');
+    setShowParameterMasterDialog(true);
+  };
+
+  const handleAddToExclusion = (parameter: TestResult, validationFlag: any) => {
+    setSelectedParameter(parameter);
+    setSelectedValidationFlag(validationFlag);
+    setShowExclusionDialog(true);
+  };
+
+  const handleParameterMasterSubmit = async () => {
+    if (!selectedParameter) return;
+
+    setSubmittingSuggestion(true);
+    try {
+      const suggestionData: any = {
+        action: parameterAction,
+        suggestedParameter: selectedParameter.serviceItemName,
+        suggestedUnit: selectedParameter.unit,
+        validationFlag: selectedValidationFlag,
+        reportId: report?._id
+      };
+
+      if (parameterAction === 'create') {
+        // For creating new parameter
+        if (!newParameterId.trim()) {
+          enqueueSnackbar('Parameter ID is required', { variant: 'warning' });
+          setSubmittingSuggestion(false);
+          return;
+        }
+
+        suggestionData.newParameterData = {
+          parameterId: newParameterId.trim().toUpperCase().replace(/\s+/g, '_'),
+          parameterName: selectedParameter.serviceItemName,
+          valueType: valueType,
+          possibleUnits: selectedParameter.unit ? [selectedParameter.unit] : [],
+          description: parameterDescription.trim()
+        };
+      } else if (parameterAction === 'update_alias') {
+        // For adding as alias to existing parameter
+        if (!targetParameter) {
+          enqueueSnackbar('Please select a target parameter', { variant: 'warning' });
+          setSubmittingSuggestion(false);
+          return;
+        }
+
+        suggestionData.targetParameterId = targetParameter.parameterId;
+        suggestionData.targetParameterName = targetParameter.parameterName;
+
+        // If it's a unit mismatch, change action to update_unit
+        if (selectedValidationFlag?.flagType === 'UNIT_MISMATCH' && selectedParameter.unit) {
+          suggestionData.action = 'update_unit';
+        }
+      }
+
+      const response = await api.post('/parameter-suggestions', suggestionData);
+
+      if (response.data.success) {
+        enqueueSnackbar('Parameter suggestion submitted for approval', { variant: 'success' });
+        setShowParameterMasterDialog(false);
+        // Optionally refresh report
+        await fetchReport();
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to submit parameter suggestion';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    } finally {
+      setSubmittingSuggestion(false);
+    }
+  };
+
+  const handleExclusionSubmit = async (data: any) => {
+    try {
+      const response = await api.post('/exclusions', {
+        excludedParameter: data.parameterName,
+        unit: data.unit || null,
+        reason: data.reason,
+        labName: report?.extractedData?.labName || null
+      });
+
+      if (response.data.success) {
+        enqueueSnackbar('Parameter added to exclusion list successfully', { variant: 'success' });
+        setShowExclusionDialog(false);
+        // Refresh report to update validation flags
+        await fetchReport();
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to add parameter to exclusion list';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    }
+  };
 
   const getValueIndicator = (parameter: TestParameter | TestResult) => {
     // Try referenceRange first, fall back to normalRange
@@ -1033,8 +1148,26 @@ const ReviewReport: React.FC = () => {
     ? pageWiseData.find((p: any) => p.pageNumber === currentPage)?.results || []
     : report?.extractedData?.results || [];
 
-  // Filter results based on search term
-  const filteredResults = currentPageResults.filter((param: TestResult) =>
+  // Separate excluded and active parameters
+  const excludedParams: TestResult[] = [];
+  const activeParams: TestResult[] = [];
+
+  currentPageResults.forEach((param: TestResult) => {
+    const hasExclusionFlag = report?.validationFlags?.some(
+      (flag: any) =>
+        flag.parameterName === param.serviceItemName &&
+        flag.isExcluded === true
+    );
+
+    if (hasExclusionFlag) {
+      excludedParams.push(param);
+    } else {
+      activeParams.push(param);
+    }
+  });
+
+  // Filter active parameters based on search term (excluded params don't appear in search)
+  const filteredResults = activeParams.filter((param: TestResult) =>
     param.serviceItemName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     param.value.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -1401,7 +1534,8 @@ const ReviewReport: React.FC = () => {
                 {report.uiIndicators?.label || 'Normal'}
               </Typography>
               <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
-                {report.extractedData?.results?.length || 0} parameters
+                {activeParams.length} parameters
+                {excludedParams.length > 0 && ` (${excludedParams.length} excluded)`}
               </Typography>
             </CardContent>
           </Card>
@@ -1466,6 +1600,28 @@ const ReviewReport: React.FC = () => {
             }}
           />
         </Box>
+
+        {/* Excluded Parameters CTA */}
+        {excludedParams.length > 0 && (
+          <Alert
+            severity="info"
+            sx={{ mb: 2, bgcolor: '#FEF3C7', border: '1px solid #FBBF24' }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => setShowExcludedParamsDialog(true)}
+                sx={{ textDecoration: 'underline' }}
+              >
+                View ({excludedParams.length})
+              </Button>
+            }
+          >
+            <Typography variant="body2">
+              {excludedParams.length} parameter{excludedParams.length !== 1 ? 's' : ''} excluded from validation
+            </Typography>
+          </Alert>
+        )}
 
         <TableContainer>
           <Table sx={{ minWidth: 650 }}>
@@ -1546,7 +1702,52 @@ const ReviewReport: React.FC = () => {
                           </IconButton>
                         </Box>
                       ) : (
-                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {/* Check if this parameter has validation flags */}
+                          {(() => {
+                            const validationFlag = report?.validationFlags?.find(
+                              flag => flag.parameterName === parameter.serviceItemName &&
+                                     !flag.isExcluded // Don't show buttons for excluded parameters
+                            );
+
+                            if (validationFlag && (validationFlag.flagType === 'PARAMETER_NOT_FOUND' ||
+                                                   validationFlag.flagType === 'UNIT_MISMATCH')) {
+                              return (
+                                <>
+                                  <Tooltip title="Add to Parameter Master">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleAddToParameterMaster(parameter, validationFlag)}
+                                      sx={{
+                                        color: '#10B981',
+                                        '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.08)' },
+                                        width: 32,
+                                        height: 32
+                                      }}
+                                    >
+                                      <ParameterMasterIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Add to Exclusion List">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleAddToExclusion(parameter, validationFlag)}
+                                      sx={{
+                                        color: '#F59E0B',
+                                        '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.08)' },
+                                        width: 32,
+                                        height: 32
+                                      }}
+                                    >
+                                      <BlockIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              );
+                            }
+                            return null;
+                          })()}
+
                           <IconButton
                             size="small"
                             onClick={() => handleEditToggle(parameter._id || '')}
@@ -1992,6 +2193,302 @@ const ReviewReport: React.FC = () => {
             startIcon={deleting ? <CircularProgress size={16} /> : <DeleteIcon />}
           >
             {deleting ? 'Deleting...' : 'Delete Parameter'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add to Parameter Master Dialog */}
+      <Dialog
+        open={showParameterMasterDialog}
+        onClose={() => !submittingSuggestion && setShowParameterMasterDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#E0F2FE', borderBottom: '2px solid #0284C7' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <ParameterMasterIcon sx={{ mr: 1, color: '#0284C7' }} />
+            Add to Parameter Master
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Box sx={{ mb: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 1 }}>
+            <Typography variant="subtitle2" color="text.secondary">Current Parameter:</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              {selectedParameter?.serviceItemName}
+            </Typography>
+            {selectedParameter?.unit && (
+              <>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>Unit:</Typography>
+                <Typography variant="body1">{selectedParameter.unit}</Typography>
+              </>
+            )}
+          </Box>
+
+          {/* Action Selection */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Choose Action:
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant={parameterAction === 'create' ? 'contained' : 'outlined'}
+                onClick={() => {
+                  setParameterAction('create');
+                  setTargetParameter(null);
+                }}
+                sx={{ flex: 1 }}
+              >
+                Create New Parameter
+              </Button>
+              <Button
+                variant={parameterAction === 'update_alias' ? 'contained' : 'outlined'}
+                onClick={() => {
+                  setParameterAction('update_alias');
+                  setNewParameterId('');
+                  setValueType('numeric');
+                  setParameterDescription('');
+                }}
+                sx={{ flex: 1 }}
+              >
+                Add as Alias to Existing
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Create New Parameter Form */}
+          {parameterAction === 'create' && (
+            <Box>
+              <TextField
+                fullWidth
+                label="Parameter ID (Key)"
+                placeholder="e.g., HEMOGLOBIN, WBC_COUNT"
+                value={newParameterId}
+                onChange={(e) => setNewParameterId(e.target.value.toUpperCase())}
+                required
+                sx={{ mb: 2 }}
+                helperText="Unique identifier for the parameter (uppercase, no spaces)"
+              />
+
+              <TextField
+                select
+                fullWidth
+                label="Value Type"
+                value={valueType}
+                onChange={(e) => setValueType(e.target.value as any)}
+                required
+                SelectProps={{ native: true }}
+                sx={{ mb: 2 }}
+              >
+                <option value="numeric">Numeric</option>
+                <option value="text">Text</option>
+                <option value="alphanumeric">Alphanumeric</option>
+                <option value="range">Range</option>
+              </TextField>
+
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                label="Description (Optional)"
+                placeholder="Brief description of the parameter"
+                value={parameterDescription}
+                onChange={(e) => setParameterDescription(e.target.value)}
+                sx={{ mb: 2 }}
+              />
+
+              {selectedParameter?.unit && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    The unit "{selectedParameter.unit}" will be added as a possible unit for this parameter.
+                  </Typography>
+                </Alert>
+              )}
+            </Box>
+          )}
+
+          {/* Add as Alias Form */}
+          {parameterAction === 'update_alias' && (
+            <Box>
+              <ParameterSearchField
+                value={targetParameter}
+                onChange={setTargetParameter}
+                label="Search and Select Target Parameter"
+                placeholder="Type to search existing parameters..."
+                required
+                helperText="Select the parameter to which this will be added as an alias"
+              />
+
+              {targetParameter && (
+                <Box sx={{ mt: 2, p: 2, bgcolor: '#F0F9FF', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" color="primary">Selected Parameter:</Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                    {targetParameter.parameterName} ({targetParameter.parameterId})
+                  </Typography>
+                  {targetParameter.aliases?.length > 0 && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      Current aliases: {targetParameter.aliases.join(', ')}
+                    </Typography>
+                  )}
+                  {selectedValidationFlag?.flagType === 'UNIT_MISMATCH' && selectedParameter?.unit && (
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                      <Typography variant="body2">
+                        The unit "{selectedParameter.unit}" will also be added to this parameter's possible units.
+                      </Typography>
+                    </Alert>
+                  )}
+                </Box>
+              )}
+            </Box>
+          )}
+
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              Your suggestion will be queued for admin approval. Once approved, it will be automatically applied to the Parameter Master.
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setShowParameterMasterDialog(false)}
+            disabled={submittingSuggestion}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleParameterMasterSubmit}
+            disabled={
+              submittingSuggestion ||
+              (parameterAction === 'create' && !newParameterId.trim()) ||
+              (parameterAction === 'update_alias' && !targetParameter)
+            }
+            startIcon={submittingSuggestion ? <CircularProgress size={16} /> : <AddIcon />}
+            sx={{ bgcolor: '#0284C7', '&:hover': { bgcolor: '#0369A1' } }}
+          >
+            {submittingSuggestion ? 'Submitting...' : 'Submit Suggestion'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add to Exclusion List Dialog */}
+      <Dialog
+        open={showExclusionDialog}
+        onClose={() => setShowExclusionDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#FEF3C7', borderBottom: '2px solid #F59E0B' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <BlockIcon sx={{ mr: 1, color: '#F59E0B' }} />
+            Add to Exclusion List
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography variant="body2" gutterBottom>
+            Add this parameter to the exclusion list to skip validation for future reports.
+          </Typography>
+          <Box sx={{ mt: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 1 }}>
+            <Typography variant="subtitle2" color="text.secondary">Parameter Name:</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              {selectedParameter?.serviceItemName}
+            </Typography>
+            {selectedValidationFlag?.flagType === 'UNIT_MISMATCH' && (
+              <>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>Unit:</Typography>
+                <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                  {selectedParameter?.unit || '-'}
+                </Typography>
+              </>
+            )}
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>Lab:</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              {report?.extractedData?.labName || 'All Labs'}
+            </Typography>
+          </Box>
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Reason for Exclusion"
+            placeholder="Enter the reason for excluding this parameter..."
+            sx={{ mt: 2 }}
+            onChange={(e) => setMismatchReason(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowExclusionDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<BlockIcon />}
+            onClick={() => handleExclusionSubmit({
+              parameterName: selectedParameter?.serviceItemName,
+              unit: selectedValidationFlag?.flagType === 'UNIT_MISMATCH' ? selectedParameter?.unit : null,
+              reason: mismatchReason
+            })}
+            disabled={!mismatchReason.trim()}
+            sx={{ bgcolor: '#F59E0B', '&:hover': { bgcolor: '#D97706' } }}
+          >
+            Add to Exclusion List
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Excluded Parameters Dialog */}
+      <Dialog
+        open={showExcludedParamsDialog}
+        onClose={() => setShowExcludedParamsDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <BlockIcon sx={{ mr: 1, color: '#6B7280' }} />
+            Excluded Parameters
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            These parameters are excluded from validation and do not appear in the main review table.
+          </Typography>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Parameter</TableCell>
+                  <TableCell>Value</TableCell>
+                  <TableCell>Unit</TableCell>
+                  <TableCell>Exclusion Reason</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {excludedParams.map((param: TestResult, idx: number) => {
+                  const flag = report?.validationFlags?.find(
+                    (f: any) =>
+                      f.parameterName === param.serviceItemName &&
+                      f.isExcluded === true
+                  );
+                  return (
+                    <TableRow key={idx}>
+                      <TableCell>{param.serviceItemName}</TableCell>
+                      <TableCell>{param.value}</TableCell>
+                      <TableCell>{param.unit}</TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {flag?.exclusionReason || 'N/A'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowExcludedParamsDialog(false)}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>

@@ -42,6 +42,7 @@ import {
   ChevronRight as ChevronRightIcon,
   History as AuditIcon,
   ListAlt as ParameterIcon,
+  Block as ExclusionIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -132,6 +133,11 @@ const Layout: React.FC = () => {
             title: 'Parameter Master',
             path: '/admin/parameter-master',
             icon: <ParameterIcon />,
+          },
+          {
+            title: 'Exclusion Master',
+            path: '/admin/exclusion-master',
+            icon: <ExclusionIcon />,
           },
           {
             title: 'Audit Logs',

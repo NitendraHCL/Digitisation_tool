@@ -22,6 +22,7 @@ module.exports = function(app) {
         "img-src 'self' data: https:",
         "font-src 'self' data:",
         "connect-src 'self' http://localhost:5001 ws://localhost:3000", // WebSocket for hot reload
+        "frame-src 'self' http://localhost:5001", // Allow iframes to load PDFs from backend
         "frame-ancestors 'self'",
         "form-action 'self'",
         "base-uri 'self'",
@@ -47,7 +48,9 @@ module.exports = function(app) {
     // Cross-Origin Policies for Spectre protection
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    // COEP disabled in development to allow cross-origin iframe embedding (different ports = cross-origin)
+    // In production, this should be 'require-corp' with all resources properly configured
+    // res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
 
     // Remove X-Powered-By header (information disclosure)
     res.removeHeader('X-Powered-By');

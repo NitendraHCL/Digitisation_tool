@@ -12,7 +12,7 @@ class PDFConverterService {
     this.options = {
       density: 150,           // OPTIMIZED: Reduced from 300 DPI for faster processing (15-20% speedup)
       saveFilename: 'page',
-      savePath: './temp',
+      savePath: path.join(__dirname, '../../temp'), // FIX: Use absolute path to avoid parallel processing issues
       format: 'png',         // Lossless format for medical documents
       width: 1280,           // OPTIMIZED: Cap width at 1280px (medical docs don't need full resolution)
       quality: 90            // OPTIMIZED: Good compression without quality loss
@@ -26,15 +26,27 @@ class PDFConverterService {
     console.log('[PDF CONVERTER] ========================================');
     console.log('[PDF CONVERTER] 1. PDF path:', pdfPath);
 
-    try {
-      // Ensure temp directory exists
-      const mkdirStartTime = Date.now();
-      await fs.mkdir(this.options.savePath, { recursive: true });
-      console.log('[PDF CONVERTER] 2. Temp directory created in', Date.now() - mkdirStartTime, 'ms');
+    // Create a unique temp directory for this conversion to avoid race conditions
+    const uniqueTempDir = path.join(
+      __dirname,
+      '../../temp',
+      `pdf-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    );
 
-      // Initialize converter
+    try {
+      // Ensure unique temp directory exists
+      const mkdirStartTime = Date.now();
+      await fs.mkdir(uniqueTempDir, { recursive: true });
+      console.log('[PDF CONVERTER] 2. Unique temp directory created in', Date.now() - mkdirStartTime, 'ms');
+      console.log('[PDF CONVERTER] 2a. Temp path:', uniqueTempDir);
+
+      // Initialize converter with unique temp directory
       const initStartTime = Date.now();
-      const converter = fromPath(pdfPath, this.options);
+      const converterOptions = {
+        ...this.options,
+        savePath: uniqueTempDir // Use unique directory for this conversion
+      };
+      const converter = fromPath(pdfPath, converterOptions);
       console.log('[PDF CONVERTER] 3. Converter initialized in', Date.now() - initStartTime, 'ms');
 
       // Get PDF info to know how many pages
@@ -60,6 +72,15 @@ class PDFConverterService {
           totalConversionTime += conversionDuration;
 
           if (result && result.path) {
+            // Verify the file actually exists (pdf2pic sometimes returns a path but fails silently)
+            try {
+              await fs.access(result.path);
+            } catch (accessError) {
+              console.error(`[PDF CONVERTER] ERROR: Page ${i} file not found at ${result.path}`);
+              console.error('[PDF CONVERTER] This usually means GraphicsMagick failed to convert the PDF page');
+              continue; // Skip this page and try the next one
+            }
+
             // Read the image file
             const readStart = Date.now();
             const imageBuffer = await fs.readFile(result.path);
@@ -71,6 +92,13 @@ class PDFConverterService {
             const base64Image = imageBuffer.toString('base64');
             const base64Duration = Date.now() - base64Start;
             totalBase64Time += base64Duration;
+
+            // Verify we got actual data
+            if (base64Image.length === 0) {
+              console.error(`[PDF CONVERTER] ERROR: Page ${i} conversion produced 0 bytes`);
+              await fs.unlink(result.path).catch(() => {}); // Clean up if it exists
+              continue; // Skip this page
+            }
 
             images.push(base64Image);
 
@@ -119,6 +147,14 @@ class PDFConverterService {
     } catch (error) {
       console.error('[PDF CONVERTER] Conversion error:', error);
       throw new Error(`PDF conversion failed: ${error.message}`);
+    } finally {
+      // Cleanup: Remove the unique temp directory
+      try {
+        await fs.rm(uniqueTempDir, { recursive: true, force: true });
+        console.log('[PDF CONVERTER] 15. Cleaned up temp directory:', uniqueTempDir);
+      } catch (cleanupError) {
+        console.error('[PDF CONVERTER] Cleanup error for temp directory:', cleanupError.message);
+      }
     }
   }
 

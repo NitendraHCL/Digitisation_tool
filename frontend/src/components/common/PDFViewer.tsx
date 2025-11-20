@@ -34,15 +34,52 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl, currentPage = 1, totalPag
   console.log('[PDF VIEWER] Current Page:', currentPage);
   console.log('[PDF VIEWER] Total Pages:', totalPages);
   console.log('[PDF VIEWER] URL type:', typeof pdfUrl);
+  console.log('[PDF VIEWER] Loading state:', loading);
+  console.log('[PDF VIEWER] Error state:', error);
+  console.log('[PDF VIEWER] Zoom:', zoom);
+
+  // Track loading state changes
+  React.useEffect(() => {
+    console.log('[PDF VIEWER] Loading state changed to:', loading);
+    console.log('[PDF VIEWER] Iframe display style will be:', loading ? 'none' : 'block');
+  }, [loading]);
 
   const handleLoad = () => {
     console.log('[PDF VIEWER] ✓ PDF loaded successfully in iframe');
+    console.log('[PDF VIEWER] Setting loading to false, iframe should now be visible');
+
+    // Try to detect if iframe actually loaded content or error page
+    try {
+      if (iframeRef.current) {
+        console.log('[PDF VIEWER] Iframe current src:', iframeRef.current.src);
+        console.log('[PDF VIEWER] Iframe contentWindow exists:', !!iframeRef.current.contentWindow);
+
+        // Try to access iframe document (will fail if COEP/CORP blocks it)
+        try {
+          const iframeDoc = iframeRef.current.contentWindow?.document;
+          if (iframeDoc) {
+            console.log('[PDF VIEWER] Iframe document accessible:', true);
+            console.log('[PDF VIEWER] Iframe document title:', iframeDoc.title);
+            console.log('[PDF VIEWER] Iframe document body exists:', !!iframeDoc.body);
+          }
+        } catch (securityError) {
+          console.warn('[PDF VIEWER] ⚠️  Cannot access iframe content (CORS/Security):', securityError instanceof Error ? securityError.message : String(securityError));
+          console.warn('[PDF VIEWER] This is expected for cross-origin PDFs');
+        }
+      }
+    } catch (err) {
+      console.error('[PDF VIEWER] Error checking iframe:', err);
+    }
+
     setLoading(false);
     setError(null);
   };
 
-  const handleError = () => {
+  const handleError = (e: any) => {
     console.error('[PDF VIEWER] ✗ Error loading PDF in iframe');
+    console.error('[PDF VIEWER] Error event:', e);
+    console.error('[PDF VIEWER] Error type:', e?.type);
+    console.error('[PDF VIEWER] Error target:', e?.target);
     setError('Failed to load PDF. Please try opening it in a new tab.');
     setLoading(false);
   };

@@ -50,11 +50,6 @@ PATIENT_NAME: [patient name as shown in report]
 PATIENT_GENDER: [male/female/other]
 DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
-**COLUMN ORDER: Observe the exact column order in the report table. Add this after demographics:**
-COLUMN_ORDER: [comma-separated list of column names as they appear in report]
-Valid column names: Parameter, Value, Unit, Normal Range
-Example: COLUMN_ORDER: Parameter,Value,Normal Range,Unit
-
 Then extract all test parameters from this lab report and return the data in this exact format:
 
 TEST_NAME | VALUE | UNIT | METHOD | REF_RANGE_TEXT | REF_HIGH | REF_LOW
@@ -131,7 +126,6 @@ ${text}`;
 
       // Parse the pipe-separated response
       let labNameFromResponse = null;
-      let columnOrderFromResponse = null;
       const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
 
       // Initialize patient demographics
@@ -165,14 +159,6 @@ ${text}`;
         allLines.shift();
       }
 
-      // Check if next line is column order
-      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-        const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
-        console.log('[GEMINI] 18f. Column order extracted from response:', columnOrderFromResponse);
-        allLines.shift(); // Remove the column order line
-      }
-
       const lines = allLines.filter(l => l.includes('|'));
       console.log('[GEMINI] 18. Extracted', lines.length, 'parameter lines');
 
@@ -185,9 +171,10 @@ ${text}`;
 
         if (parts.length >= 7) {
           const testName = parts[0];
-          const value = parts[1];
-          const unit = parts[2];
-          const method = parts[3];
+          // Handle "null" string and empty values properly
+          const value = parts[1] === 'null' || parts[1] === '' ? null : parts[1];
+          const unit = parts[2] === 'null' || parts[2] === '' ? null : parts[2];
+          const method = parts[3] === 'null' || parts[3] === '' ? null : parts[3];
           const refRangeText = parts[4];
           const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
           const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
@@ -278,7 +265,6 @@ ${text}`;
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
-        columnOrder: columnOrderFromResponse || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order
         tokenUsage: {
           promptTokens: inputTokens,
           completionTokens: outputTokens,
@@ -439,7 +425,6 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Parse the pipe-separated response (same logic as text extraction)
       let labNameFromResponse = null;
-      let columnOrderFromResponse = null;
       const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
 
       // Initialize patient demographics
@@ -473,16 +458,15 @@ The pages in this lab report are provided in their original sequential order. Yo
         allLines.shift();
       }
 
-      // Check if next line is column order
-      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-        const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-        columnOrderFromResponse = columnOrderStr.split(',').map(c => c.trim());
-        console.log('[GEMINI VISION] 18f. Column order extracted from response:', columnOrderFromResponse);
-        allLines.shift(); // Remove the column order line
-      }
-
       const lines = allLines.filter(l => l.includes('|'));
       console.log('[GEMINI VISION] 18. Extracted', lines.length, 'parameter lines');
+
+      // Debug: Log warning if no lines found
+      if (lines.length === 0) {
+        console.warn('[GEMINI VISION] WARNING: No pipe-separated lines found in response!');
+        console.warn('[GEMINI VISION] WARNING: Response may not be in expected format.');
+        console.warn('[GEMINI VISION] WARNING: First few remaining lines:', allLines.slice(0, 5));
+      }
 
       const results = [];
 
@@ -492,9 +476,10 @@ The pages in this lab report are provided in their original sequential order. Yo
 
         if (parts.length >= 7) {
           const testName = parts[0];
-          const value = parts[1];
-          const unit = parts[2];
-          const method = parts[3];
+          // Handle "null" string and empty values properly
+          const value = parts[1] === 'null' || parts[1] === '' ? null : parts[1];
+          const unit = parts[2] === 'null' || parts[2] === '' ? null : parts[2];
+          const method = parts[3] === 'null' || parts[3] === '' ? null : parts[3];
           const refRangeText = parts[4];
           const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
           const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
@@ -590,7 +575,6 @@ The pages in this lab report are provided in their original sequential order. Yo
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
-        columnOrder: columnOrderFromResponse || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order
         tokenUsage: {
           promptTokens: inputTokens,
           completionTokens: outputTokens,
@@ -661,7 +645,8 @@ Important:
 - Extract ONLY data visible on THIS specific page
 - Return ONLY pipe-separated data, one test per line
 - Do not include explanatory text or markdown
-- Use "null" (as text) for missing numeric values
+- For VALUE field: Extract the actual test result. Leave empty if no value found
+- For REF_HIGH/REF_LOW only: Use "null" if no reference values exist
 - For subsequent pages (not page 1), do NOT include header lines (LAB_NAME, PATIENT_NAME, etc.)
 
 **IMPORTANT - Sequential Pages and Interpretations:**
@@ -674,7 +659,6 @@ The pages in this lab report are provided in their original sequential order. Yo
       let patientNameGlobal = null;
       let patientGenderGlobal = null;
       let dateOfTestGlobal = null;
-      let columnOrderGlobal = null;
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
       let totalCost = 0;
@@ -742,13 +726,17 @@ The pages in this lab report are provided in their original sequential order. Yo
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Response length: ${response.length} characters`);
 
+            // DEBUG: Log full response for page
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. ========== FULL RESPONSE FOR PAGE ${pageNumber} ==========`);
+            console.log(response);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. ========== END RESPONSE ==========`);
+
             // Parse response
             const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
             let labNameFromPage = null;
             let patientNameFromPage = null;
             let patientGenderFromPage = null;
             let dateOfTestFromPage = null;
-            let columnOrderFromPage = null;
 
             // Check for lab name (only expected on first page)
             if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
@@ -778,16 +766,25 @@ The pages in this lab report are provided in their original sequential order. Yo
               allLines.shift();
             }
 
-            // Check for column order (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('COLUMN_ORDER:')) {
-              const columnOrderStr = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              columnOrderFromPage = columnOrderStr.split(',').map(c => c.trim());
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. Column order: ${columnOrderFromPage}`);
-              allLines.shift();
+            const lines = allLines.filter(l => l.includes('|'));
+
+            // DEBUG: Log line filtering results
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Total lines after headers: ${allLines.length}`);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Lines with pipes: ${lines.length}`);
+            if (lines.length === 0 && allLines.length > 0) {
+              console.warn(`[GEMINI PAGEWISE] WARNING Page ${pageNumber}: No pipe-separated lines found!`);
+              console.warn(`[GEMINI PAGEWISE] First 5 remaining lines:`, allLines.slice(0, 5));
             }
 
-            const lines = allLines.filter(l => l.includes('|'));
             const pageResults = [];
+
+            // Debug: Log first few raw lines
+            if (lines.length > 0 && pageNumber === 1) {
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g1. First 3 raw lines for debugging:`);
+              lines.slice(0, 3).forEach((line, idx) => {
+                console.log(`  Line ${idx + 1}: "${line}"`);
+              });
+            }
 
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i].trim();
@@ -795,9 +792,10 @@ The pages in this lab report are provided in their original sequential order. Yo
 
               if (parts.length >= 7) {
                 const testName = parts[0];
-                const value = parts[1];
-                const unit = parts[2];
-                const method = parts[3];
+                // Handle "null" string and empty values properly
+                const value = parts[1] === 'null' || parts[1] === '' ? null : parts[1];
+                const unit = parts[2] === 'null' || parts[2] === '' ? null : parts[2];
+                const method = parts[3] === 'null' || parts[3] === '' ? null : parts[3];
                 const refRangeText = parts[4];
                 const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
                 const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
@@ -816,6 +814,9 @@ The pages in this lab report are provided in their original sequential order. Yo
                 };
 
                 pageResults.push(resultObj);
+              } else {
+                // DEBUG: Log lines that don't match expected format
+                console.warn(`[GEMINI PAGEWISE] Page ${pageNumber} skipped line (parts.length=${parts.length}): ${line}`);
               }
             }
 
@@ -825,6 +826,12 @@ The pages in this lab report are provided in their original sequential order. Yo
             const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
             // Calculate cost even if output is 0 (input-only cost)
             const pageCost = ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000;
+
+            // Validation: Check if all values are null
+            if (pageResults.length > 0 && pageResults.every(r => !r.value || r.value === 'null')) {
+              console.error(`[GEMINI PAGEWISE] ⚠️ WARNING Page ${pageNumber}: All ${pageResults.length} values are null/empty!`);
+              console.error(`[GEMINI PAGEWISE] Sample raw lines for debugging:`, lines.slice(0, 3));
+            }
 
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Parameters extracted: ${pageResults.length}`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Tokens: ${inputTokens} input, ${outputTokens} output`);
@@ -839,7 +846,6 @@ The pages in this lab report are provided in their original sequential order. Yo
               patientName: patientNameFromPage,
               patientGender: patientGenderFromPage,
               dateOfTest: dateOfTestFromPage,
-              columnOrder: columnOrderFromPage,
               extractionMetadata: {
                 responseLength: response.length,
                 parametersExtracted: pageResults.length,
@@ -883,11 +889,6 @@ The pages in this lab report are provided in their original sequential order. Yo
           if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
         }
 
-        // Extract column order from first page
-        if (pageData.pageNumber === 1 && pageData.columnOrder) {
-          columnOrderGlobal = pageData.columnOrder;
-        }
-
         // Add to page-wise data
         pageWiseData.push({
           pageNumber: pageData.pageNumber,
@@ -913,6 +914,15 @@ The pages in this lab report are provided in their original sequential order. Yo
       console.log('[GEMINI PAGEWISE] 9. ========== EXTRACTION COMPLETE ==========');
       console.log('[GEMINI PAGEWISE] 9. Total pages processed:', successfulPages, '/', images.length);
       console.log('[GEMINI PAGEWISE] 10. Total parameters extracted:', allResults.length);
+
+      // CRITICAL WARNING if no parameters extracted
+      if (allResults.length === 0) {
+        console.error('[GEMINI PAGEWISE] ❌❌❌ CRITICAL ERROR: ZERO PARAMETERS EXTRACTED ❌❌❌');
+        console.error('[GEMINI PAGEWISE] Despite processing', successfulPages, 'pages successfully!');
+        console.error('[GEMINI PAGEWISE] Check the response format from Gemini Flash 2.5');
+        console.error('[GEMINI PAGEWISE] First page raw response sample:', pageWiseData[0]?.rawResponse?.substring(0, 500));
+      }
+
       console.log('[GEMINI PAGEWISE] 11. Total processing time:', totalDuration, 'seconds');
       console.log('[GEMINI PAGEWISE] 12. Total input tokens:', totalInputTokens);
       console.log('[GEMINI PAGEWISE] 13. Total output tokens:', totalOutputTokens);
@@ -927,7 +937,6 @@ The pages in this lab report are provided in their original sequential order. Yo
         dateOfTest: dateOfTestGlobal,
         results: allResults,
         pageWiseData: pageWiseData,
-        columnOrder: columnOrderGlobal || ['Parameter', 'Value', 'Normal Range', 'Unit'], // Fallback to default order
         tokenUsage: {
           promptTokens: totalInputTokens,
           completionTokens: totalOutputTokens,

@@ -187,7 +187,7 @@ const AllReportsList: React.FC = () => {
   // Filter reports based on search and status
   const filteredReports = reports.filter(report => {
     const matchesSearch = searchTerm === '' ||
-      report.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      report.orderId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       report.extractedData?.patientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       report.extractedData?.labName?.toLowerCase().includes(searchTerm.toLowerCase());
 

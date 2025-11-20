@@ -26,6 +26,7 @@ import UserManagement from './pages/admin/UserManagement';
 import ConfigurationManagement from './pages/admin/ConfigurationManagement';
 import AuditDashboard from './pages/admin/AuditDashboard';
 import ParameterMasterManagement from './pages/admin/ParameterMasterManagement';
+import ExclusionMasterManagement from './pages/admin/ExclusionMasterManagement';
 
 
 function App() {
@@ -146,6 +147,14 @@ function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <ParameterMasterManagement />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="admin/exclusion-master"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <ExclusionMasterManagement />
                     </ProtectedRoute>
                   }
                 />

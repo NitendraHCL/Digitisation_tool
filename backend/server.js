@@ -43,11 +43,15 @@ console.log('[SERVER] ========== MIDDLEWARE SETUP ==========');
 
 // Security middleware
 console.log('[SERVER] Loading security middleware (helmet)...');
+const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      "frame-ancestors": ["'self'", process.env.FRONTEND_URL || "http://localhost:3000"]
+      "frame-ancestors": ["'self'", process.env.FRONTEND_URL || "http://localhost:3000"],
+      // Don't upgrade to HTTPS in development since we're on HTTP
+      ...(isDevelopment && { "upgrade-insecure-requests": null })
     }
   }
 }));
@@ -92,8 +96,18 @@ if (!fs.existsSync(uploadsDir)) {
 } else {
   console.log('[SERVER] ✓ Uploads directory exists');
 }
+
+// Add Cross-Origin-Resource-Policy header to allow PDFs to be embedded in iframes
+// This is required when the frontend uses Cross-Origin-Embedder-Policy: require-corp
+// Security note: Consider adding authentication middleware here to restrict access to authorized users only
+app.use('/uploads', (req, res, next) => {
+  // Allow cross-origin embedding while maintaining CORS restrictions via corsOptions above
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
 app.use('/uploads', express.static(uploadsDir));
-console.log('[SERVER] ✓ Static file serving enabled for /uploads');
+console.log('[SERVER] ✓ Static file serving enabled for /uploads with CORP headers');
 
 // Temp directory for processing
 const tempDir = path.join(__dirname, 'temp');
@@ -270,6 +284,28 @@ try {
   console.log('[SERVER] ✓ Parameter master routes registered at /api/parameter-master');
 } catch (error) {
   console.error('[SERVER] ✗ ERROR loading parameter master routes:', error.message);
+  console.error('[SERVER] Stack trace:', error.stack);
+}
+
+// Parameter Exclusion routes
+console.log('[SERVER] Loading parameter exclusion routes...');
+try {
+  const exclusionRoutes = require('./src/routes/exclusion.routes');
+  app.use('/api/exclusions', exclusionRoutes);
+  console.log('[SERVER] ✓ Parameter exclusion routes registered at /api/exclusions');
+} catch (error) {
+  console.error('[SERVER] ✗ ERROR loading parameter exclusion routes:', error.message);
+  console.error('[SERVER] Stack trace:', error.stack);
+}
+
+// Parameter Suggestion routes
+console.log('[SERVER] Loading parameter suggestion routes...');
+try {
+  const parameterSuggestionRoutes = require('./src/routes/parameterSuggestion.routes');
+  app.use('/api/parameter-suggestions', parameterSuggestionRoutes);
+  console.log('[SERVER] ✓ Parameter suggestion routes registered at /api/parameter-suggestions');
+} catch (error) {
+  console.error('[SERVER] ✗ ERROR loading parameter suggestion routes:', error.message);
   console.error('[SERVER] Stack trace:', error.stack);
 }
 

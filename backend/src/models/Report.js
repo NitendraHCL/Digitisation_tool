@@ -280,7 +280,7 @@ const reportSchema = new mongoose.Schema({
     },
     flagType: {
       type: String,
-      enum: ['PARAMETER_NOT_FOUND', 'UNIT_MISMATCH', 'VALUE_TYPE_MISMATCH'],
+      enum: ['PARAMETER_NOT_FOUND', 'UNIT_MISMATCH', 'VALUE_TYPE_MISMATCH', 'PARAMETER_EXCLUDED', 'UNIT_EXCLUDED'],
       description: 'Type of validation flag'
     },
     expected: {
@@ -293,13 +293,23 @@ const reportSchema = new mongoose.Schema({
     },
     severity: {
       type: String,
-      enum: ['warning', 'error'],
+      enum: ['info', 'warning', 'error'],
       default: 'warning',
       description: 'Severity level for UI display'
     },
     message: {
       type: String,
       description: 'Human-readable validation message'
+    },
+    isExcluded: {
+      type: Boolean,
+      default: false,
+      description: 'Whether this parameter is in the exclusion list'
+    },
+    exclusionReason: {
+      type: String,
+      default: null,
+      description: 'Reason for exclusion if parameter is excluded'
     }
   }],
   // Edit history for nurse changes (Phase 6)
