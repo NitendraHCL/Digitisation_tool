@@ -369,7 +369,9 @@ const updateReport = async (req, res) => {
 const deleteReport = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('[REPORT CONTROLLER] Delete request for report:', id, 'by:', req.user.email);
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+    console.log('[REPORT CONTROLLER] Delete request for report:', id, 'by:', req.user.email, 'role:', userRole);
 
     const report = await Report.findById(id);
 
@@ -380,11 +382,37 @@ const deleteReport = async (req, res) => {
       });
     }
 
+    // Check if report is approved
+    if (report.status === 'approved') {
+      console.log('[REPORT CONTROLLER] Cannot delete approved report');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete approved reports'
+      });
+    }
+
+    // Check ownership: Admin can delete any, nurses can only delete their own
+    const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+    const isOwner = report.uploadedBy.toString() === userId;
+
+    if (!isAdmin && !isOwner) {
+      console.log('[REPORT CONTROLLER] User not authorized to delete this report');
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete your own reports'
+      });
+    }
+
     // Delete PDF file if it exists
     if (fs.existsSync(report.pdfPath)) {
       fs.unlinkSync(report.pdfPath);
-      console.log('[REPORT CONTROLLER] PDF file deleted');
+      console.log('[REPORT CONTROLLER] PDF file deleted:', report.pdfPath);
     }
+
+    // Delete associated audit logs
+    const AuditLog = require('../models/AuditLog');
+    const auditLogResult = await AuditLog.deleteMany({ reportId: id });
+    console.log('[REPORT CONTROLLER] Deleted', auditLogResult.deletedCount, 'audit logs');
 
     // Delete report from database
     await Report.findByIdAndDelete(id);

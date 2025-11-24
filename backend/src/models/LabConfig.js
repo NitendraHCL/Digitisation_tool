@@ -84,6 +84,17 @@ const labConfigSchema = new mongoose.Schema({
     auditLogEnabled: {
       type: Boolean,
       default: true
+    },
+    // Processing defaults
+    defaultExtractionMethod: {
+      type: String,
+      enum: ['text', 'image', 'hybrid', 'pdf'],
+      default: 'hybrid'
+    },
+    defaultModel: {
+      type: String,
+      enum: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gpt-4o', 'gpt-4.1'],
+      default: 'gemini-2.5-flash'
     }
   },
 
@@ -135,7 +146,9 @@ labConfigSchema.statics.getConfig = async function() {
         maxFileSize: 10,
         allowedFileTypes: ['pdf'],
         retentionDays: 365,
-        auditLogEnabled: true
+        auditLogEnabled: true,
+        defaultExtractionMethod: 'hybrid',
+        defaultModel: 'gemini-2.5-flash'
       },
       thresholdPercentage: 200,
       flagThreshold: 50

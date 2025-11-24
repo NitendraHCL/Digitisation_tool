@@ -431,6 +431,12 @@ const updateSystemConfig = async (req, res) => {
     if (systemConfig.auditLogEnabled !== undefined) {
       config.systemConfig.auditLogEnabled = systemConfig.auditLogEnabled;
     }
+    if (systemConfig.defaultExtractionMethod !== undefined) {
+      config.systemConfig.defaultExtractionMethod = systemConfig.defaultExtractionMethod;
+    }
+    if (systemConfig.defaultModel !== undefined) {
+      config.systemConfig.defaultModel = systemConfig.defaultModel;
+    }
 
     config.updatedBy = req.user.userId;
     await config.save();

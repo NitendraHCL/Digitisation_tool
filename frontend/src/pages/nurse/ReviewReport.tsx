@@ -67,7 +67,7 @@ import {
   Block as BlockIcon,
   LibraryAdd as ParameterMasterIcon,
 } from '@mui/icons-material';
-import api from '../../services/api';
+import api, { BACKEND_BASE_URL } from '../../services/api';
 import { useSnackbar } from 'notistack';
 import { Report, TestParameter, TestResult, EditHistory } from '../../types';
 import PDFViewer from '../../components/common/PDFViewer';
@@ -1328,7 +1328,7 @@ const ReviewReport: React.FC = () => {
               const filename = report.pdfPath.includes('/')
                 ? report.pdfPath.split('/').pop()
                 : report.pdfPath;
-              const pdfUrl = `http://localhost:5001/uploads/${filename}`;
+              const pdfUrl = `${BACKEND_BASE_URL}/uploads/${filename}`;
 
               console.log('[REVIEW REPORT] ========== PDF URL CONSTRUCTION ==========');
               console.log('[REVIEW REPORT] Original pdfPath:', report.pdfPath);

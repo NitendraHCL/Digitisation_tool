@@ -39,8 +39,8 @@ router.post('/process-multiple', isNurseOrAdmin, processMultipleReports);
 router.get('/:id/extracted', isNurseOrAdmin, getExtractedData);
 router.post('/:id/revalidate', isNurseOrAdmin, revalidateParameters);
 
-// Admin only routes
-router.delete('/:id', isAdmin, deleteReport);
+// Delete report (nurses can delete their own, admins can delete any)
+router.delete('/:id', isNurseOrAdmin, deleteReport);
 router.post('/cleanup/stuck', isAdmin, cleanupStuckReports);
 
 // Test route for debugging

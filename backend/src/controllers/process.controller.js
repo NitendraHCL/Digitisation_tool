@@ -12,12 +12,21 @@ const pLimit = require('p-limit');
 /**
  * Internal function to process a single report
  * @param {string} reportId - Report ID to process
- * @param {string} extractionMethod - Extraction method ('text', 'image', 'hybrid', 'pdf')
- * @param {string} model - LLM model to use ('gemini', 'gpt-4o', etc.)
+ * @param {string} extractionMethod - Extraction method ('text', 'image', 'hybrid', 'pdf') - optional, uses config default if not provided
+ * @param {string} model - LLM model to use ('gemini', 'gpt-4o', etc.) - optional, uses config default if not provided
  * @returns {Promise<Object>} Processed report data
  */
-async function processReportInternal(reportId, extractionMethod = 'hybrid', model = 'gemini') {
+async function processReportInternal(reportId, extractionMethod = null, model = null) {
   const overallStartTime = Date.now();
+
+  // Fetch defaults from LabConfig if not provided
+  if (!extractionMethod || !model) {
+    console.log('[PROCESS] Fetching default processing settings from LabConfig...');
+    const labConfig = await LabConfig.getConfig();
+    extractionMethod = extractionMethod || labConfig.systemConfig.defaultExtractionMethod || 'hybrid';
+    model = model || labConfig.systemConfig.defaultModel || 'gemini-2.5-flash';
+    console.log('[PROCESS] Using defaults - Method:', extractionMethod, ', Model:', model);
+  }
 
   console.log('[PROCESS] ========================================');
   console.log('[PROCESS] 🚀 STARTING REPORT PROCESSING PIPELINE');
@@ -620,9 +629,9 @@ async function processReportInternal(reportId, extractionMethod = 'hybrid', mode
 const processReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { extractionMethod = 'hybrid', model = 'gemini' } = req.body;
+    const { extractionMethod, model } = req.body;
 
-    // Call internal function and return result
+    // Call internal function (will fetch defaults from config if not provided)
     const result = await processReportInternal(id, extractionMethod, model);
 
     res.json({
@@ -650,7 +659,7 @@ const processMultipleReports = async (req, res) => {
   const batchStartTime = Date.now();
 
   try {
-    const { reportIds, extractionMethod = 'hybrid', model = 'gemini' } = req.body;
+    const { reportIds, extractionMethod, model } = req.body;
 
     console.log('[PROCESS BATCH] ========================================');
     console.log('[PROCESS BATCH] 🚀 STARTING BATCH PROCESSING');

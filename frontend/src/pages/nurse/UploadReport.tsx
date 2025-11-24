@@ -46,6 +46,7 @@ import {
   InsertDriveFile as PdfIcon,
   HourglassEmpty as WaitingIcon,
   PlayArrow as ProcessingIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
@@ -68,8 +69,6 @@ const UploadReport: React.FC = () => {
 
   const [activeStep, setActiveStep] = useState(0);
   const [files, setFiles] = useState<File[]>([]);
-  const [extractionMethod, setExtractionMethod] = useState<'text' | 'image' | 'hybrid' | 'pdf'>('image');
-  const [model, setModel] = useState<'gemini' | 'gpt-4o' | 'gpt-4.1' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' | 'gemini-2.0-flash'>('gemini-2.5-flash');
   const [uploading, setUploading] = useState(false);
   const [uploadedReports, setUploadedReports] = useState<UploadedReport[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -78,6 +77,42 @@ const UploadReport: React.FC = () => {
   const [batchStartTime, setBatchStartTime] = useState<number | null>(null);
   const [currentElapsedTime, setCurrentElapsedTime] = useState<number>(0);
   const [showConfig, setShowConfig] = useState(false);
+  const [configDefaults, setConfigDefaults] = useState<{ model: string; extractionMethod: string }>({
+    model: 'Gemini 2.5 Flash',
+    extractionMethod: 'Hybrid'
+  });
+
+  // Fetch config defaults on mount
+  React.useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await api.get('/lab-config');
+        if (response.data.success) {
+          const config = response.data.data;
+          const modelMap: Record<string, string> = {
+            'gemini-2.5-flash': 'Gemini 2.5 Flash',
+            'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
+            'gemini-2.0-flash': 'Gemini 2.0 Flash',
+            'gpt-4o': 'GPT-4o',
+            'gpt-4.1': 'GPT-4.1'
+          };
+          const methodMap: Record<string, string> = {
+            'hybrid': 'Hybrid',
+            'image': 'Image-based',
+            'text': 'Text-based',
+            'pdf': 'Raw PDF'
+          };
+          setConfigDefaults({
+            model: modelMap[config.systemConfig?.defaultModel] || 'Gemini 2.5 Flash',
+            extractionMethod: methodMap[config.systemConfig?.defaultExtractionMethod] || 'Hybrid'
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch config:', error);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   // Update timer every second while processing
   React.useEffect(() => {
@@ -206,7 +241,11 @@ const UploadReport: React.FC = () => {
 
         setUploadedReports(uploadedReportsList);
         setActiveStep(2);
-        enqueueSnackbar(`Successfully uploaded ${reports.length} report(s)!`, { variant: 'success' });
+        enqueueSnackbar(`Successfully uploaded ${reports.length} report(s)! Processing...`, { variant: 'success' });
+
+        // Auto-process immediately after upload
+        console.log('[UPLOAD] Auto-triggering batch processing...');
+        await handleBatchProcessAuto(uploadedReportsList);
       }
     } catch (error: any) {
       console.error('[UPLOAD] ========================================');
@@ -228,12 +267,12 @@ const UploadReport: React.FC = () => {
     }
   };
 
-  const handleBatchProcess = async () => {
+  const handleBatchProcessAuto = async (reports: UploadedReport[]) => {
     console.log('[UPLOAD] ========================================');
-    console.log('[UPLOAD] 11. handleBatchProcess called (PARALLEL MODE)');
-    console.log('[UPLOAD] 12. Reports to process:', uploadedReports.length);
+    console.log('[UPLOAD] 11. handleBatchProcessAuto called (AUTO-PROCESSING MODE)');
+    console.log('[UPLOAD] 12. Reports to process:', reports.length);
 
-    if (uploadedReports.length === 0) {
+    if (reports.length === 0) {
       console.error('[UPLOAD] ERROR: No reports to process');
       return;
     }
@@ -243,20 +282,18 @@ const UploadReport: React.FC = () => {
     setBatchStartTime(batchStart);
 
     // Set all reports to processing status
-    const processingReports = uploadedReports.map(r => ({ ...r, status: 'processing' as const }));
+    const processingReports = reports.map(r => ({ ...r, status: 'processing' as const }));
     setUploadedReports(processingReports);
-    setCurrentProcessingIndex(uploadedReports.length - 1); // Show all files as processing
+    setCurrentProcessingIndex(reports.length - 1); // Show all files as processing
 
     console.log('[UPLOAD] 13. Calling batch processing endpoint /reports/process-multiple');
-    console.log('[UPLOAD] 13.1 Report IDs:', uploadedReports.map(r => r.reportId));
-    console.log('[UPLOAD] 13.2 Extraction method:', extractionMethod);
-    console.log('[UPLOAD] 13.3 Model:', model);
+    console.log('[UPLOAD] 13.1 Report IDs:', reports.map(r => r.reportId));
+    console.log('[UPLOAD] 13.2 Using system defaults (no model/method specified)');
 
     try {
       const response = await api.post('/reports/process-multiple', {
-        reportIds: uploadedReports.map(r => r.reportId),
-        extractionMethod: extractionMethod,
-        model: model,
+        reportIds: reports.map(r => r.reportId),
+        // No extractionMethod or model - backend will use config defaults
       });
 
       console.log('[UPLOAD] ========================================');
@@ -294,7 +331,7 @@ const UploadReport: React.FC = () => {
         });
 
         // Update all reports with results
-        const finalReports = uploadedReports.map(report => {
+        const finalReports = reports.map(report => {
           const result = resultsMap.get(report.reportId);
           if (result) {
             return { ...report, ...result };
@@ -312,8 +349,8 @@ const UploadReport: React.FC = () => {
         console.log('[UPLOAD] ========================================');
 
         enqueueSnackbar(
-          `Processed ${successCount}/${uploadedReports.length} reports in parallel in ${totalTime}!`,
-          { variant: successCount === uploadedReports.length ? 'success' : 'warning' }
+          `Processed ${successCount}/${reports.length} reports in parallel in ${totalTime}!`,
+          { variant: successCount === reports.length ? 'success' : 'warning' }
         );
       } else {
         throw new Error(response.data.message || 'Batch processing failed');
@@ -326,7 +363,7 @@ const UploadReport: React.FC = () => {
       console.error('[UPLOAD] ========================================');
 
       // Mark all reports as error
-      const errorReports = uploadedReports.map(r => ({
+      const errorReports = reports.map(r => ({
         ...r,
         status: 'error' as const,
         error: error.response?.data?.message || 'Batch processing failed',
@@ -346,8 +383,6 @@ const UploadReport: React.FC = () => {
 
   const handleReset = () => {
     setFiles([]);
-    setExtractionMethod('image');
-    setModel('gemini-2.5-flash');
     setUploadedReports([]);
     setActiveStep(0);
     setUploading(false);
@@ -393,12 +428,12 @@ const UploadReport: React.FC = () => {
       description: 'Choose one or more PDF files to upload',
     },
     {
-      label: 'Configure Processing',
-      description: 'Select extraction method and AI model',
+      label: 'Review & Upload',
+      description: 'Review settings and upload your reports',
     },
     {
-      label: 'Process Reports',
-      description: 'Upload and process your reports',
+      label: 'Processing',
+      description: 'Reports are being processed automatically',
     },
   ];
 
@@ -514,88 +549,34 @@ const UploadReport: React.FC = () => {
             </StepContent>
           </Step>
 
-          {/* STEP 2: Configuration */}
+          {/* STEP 2: Review & Upload */}
           <Step>
             <StepLabel>
-              <Typography variant="h6">{steps[1].label}</Typography>
+              <Typography variant="h6">Review & Upload</Typography>
             </StepLabel>
             <StepContent>
-              <Box sx={{ mt: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 2, border: '1px solid #E5E7EB' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body1" sx={{ fontSize: '14px', color: '#111827', fontWeight: 500 }}>
-                    Image Based Extraction
-                  </Typography>
-                  <Button
-                    size="small"
-                    onClick={() => setShowConfig(!showConfig)}
-                    sx={{
-                      textTransform: 'none',
-                      color: '#4361EE',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' }
-                    }}
-                  >
-                    {showConfig ? 'Hide Config' : 'Change Config'}
-                  </Button>
-                </Box>
-
-                {showConfig && (
-                  <Box sx={{ mt: 2.5, pt: 2.5, borderTop: '1px solid #E5E7EB' }}>
-                    <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
-                      {/* Extraction Method Dropdown */}
-                      <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '13px' }}>Extraction Method</InputLabel>
-                        <Select
-                          value={extractionMethod}
-                          onChange={(e) => setExtractionMethod(e.target.value as any)}
-                          label="Extraction Method"
-                          sx={{
-                            fontSize: '14px',
-                            bgcolor: '#FFFFFF',
-                            '& .MuiSelect-select': { py: 1.25 }
-                          }}
-                        >
-                          <MenuItem value="image" sx={{ fontSize: '14px' }}>Image-based Extraction</MenuItem>
-                          <MenuItem value="text" sx={{ fontSize: '14px' }}>Text-based Extraction</MenuItem>
-                          <MenuItem value="hybrid" sx={{ fontSize: '14px' }}>Hybrid (Auto-detect)</MenuItem>
-                          <MenuItem value="pdf" sx={{ fontSize: '14px' }}>Raw PDF (Direct)</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      {/* AI Model Dropdown */}
-                      <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '13px' }}>AI Model</InputLabel>
-                        <Select
-                          value={model}
-                          onChange={(e) => setModel(e.target.value as any)}
-                          label="AI Model"
-                          sx={{
-                            fontSize: '14px',
-                            bgcolor: '#FFFFFF',
-                            '& .MuiSelect-select': { py: 1.25 }
-                          }}
-                        >
-                          <MenuItem value="gemini-2.5-flash" sx={{ fontSize: '14px' }}>Gemini 2.5 Flash</MenuItem>
-                          <MenuItem value="gemini-2.5-flash-lite" sx={{ fontSize: '14px' }}>Gemini 2.5 Flash-Lite</MenuItem>
-                          <MenuItem value="gemini-2.0-flash" sx={{ fontSize: '14px' }}>Gemini 2.0 Flash</MenuItem>
-                          <MenuItem value="gpt-4o" sx={{ fontSize: '14px' }}>GPT-4o</MenuItem>
-                          <MenuItem value="gpt-4.1" sx={{ fontSize: '14px' }}>GPT-4.1</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Box>
-
-                    <Alert severity="info" sx={{ mt: 2, py: 0.5, fontSize: '13px' }}>
-                      Settings apply to all {files.length} file{files.length !== 1 ? 's' : ''}
-                    </Alert>
-                  </Box>
-                )}
-              </Box>
+              <Alert severity="info" icon={<SettingsIcon />} sx={{ mt: 2, fontSize: '13px' }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, fontSize: '13px' }}>
+                  Processing Configuration
+                </Typography>
+                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6B7280' }}>
+                  Reports will be automatically processed using <strong>{configDefaults.model}</strong> with <strong>{configDefaults.extractionMethod}</strong> extraction method.
+                  <br />
+                  <em>These settings are configured by administrators and cannot be changed during upload.</em>
+                </Typography>
+              </Alert>
 
               <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                 <Button onClick={() => setActiveStep(0)}>Back</Button>
-                <Button variant="contained" onClick={handleUpload} disabled={uploading}>
-                  {uploading ? `Uploading ${files.length} File${files.length !== 1 ? 's' : ''}...` : `Upload ${files.length} Report${files.length !== 1 ? 's' : ''}`}
+                <Button
+                  variant="contained"
+                  onClick={handleUpload}
+                  disabled={uploading || processing}
+                  sx={{ minWidth: 200 }}
+                >
+                  {uploading ? `Uploading ${files.length} File${files.length !== 1 ? 's' : ''}...` :
+                   processing ? 'Processing...' :
+                   `Upload & Process ${files.length} Report${files.length !== 1 ? 's' : ''}`}
                 </Button>
               </Box>
             </StepContent>
@@ -687,18 +668,6 @@ const UploadReport: React.FC = () => {
                       </ListItem>
                     ))}
                   </List>
-
-                  {!processing && uploadedReports.some(r => r.status === 'uploaded') && (
-                    <Button
-                      variant="contained"
-                      fullWidth
-                      startIcon={<ProcessIcon />}
-                      onClick={handleBatchProcess}
-                      sx={{ mt: 2 }}
-                    >
-                      Process
-                    </Button>
-                  )}
 
                   {uploadedReports.every(r => r.status === 'completed' || r.status === 'error') && (
                     <Alert

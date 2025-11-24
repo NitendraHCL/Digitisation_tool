@@ -48,7 +48,7 @@ const AllReportsList: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,13 +127,16 @@ const AllReportsList: React.FC = () => {
   };
 
   const handleDelete = async (reportId: string) => {
-    if (!window.confirm('Are you sure you want to delete this report?')) {
+    const report = reports.find(r => r._id === reportId);
+    const confirmMessage = `Are you sure you want to delete this report?\n\nThis will permanently delete:\n• The PDF file\n• All audit logs\n• The report record\n\nThis action cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
     try {
       await api.delete(`/reports/${reportId}`);
-      enqueueSnackbar('Report deleted successfully', { variant: 'success' });
+      enqueueSnackbar('Report, PDF file, and audit logs deleted successfully', { variant: 'success' });
 
       // Optimistic update: Immediately update local state
       const updatedReports = reports.filter(r => r._id !== reportId);
@@ -151,8 +154,9 @@ const AllReportsList: React.FC = () => {
 
       // Delayed refetch to ensure DB consistency
       setTimeout(fetchReports, 500);
-    } catch (error) {
-      enqueueSnackbar('Failed to delete report', { variant: 'error' });
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to delete report';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
     }
   };
 
@@ -592,23 +596,26 @@ const AllReportsList: React.FC = () => {
                               <DownloadIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Delete Report">
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(report._id);
-                              }}
-                              sx={{
-                                '&:hover': {
-                                  bgcolor: 'error.light',
-                                  color: 'error.main'
-                                }
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {/* Only show delete button if report is not approved AND (user is admin OR owns the report) */}
+                          {report.status !== 'approved' && (isAdmin || report.uploadedBy.id === user?.id) && (
+                            <Tooltip title="Delete Report">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(report._id);
+                                }}
+                                sx={{
+                                  '&:hover': {
+                                    bgcolor: 'error.light',
+                                    color: 'error.main'
+                                  }
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </Box>
                       </TableCell>
                     </TableRow>

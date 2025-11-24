@@ -79,6 +79,8 @@ interface SystemConfig {
   allowedFileTypes: string[];
   retentionDays: number;
   auditLogEnabled: boolean;
+  defaultExtractionMethod?: string;
+  defaultModel?: string;
 }
 
 const ConfigurationManagement: React.FC = () => {
@@ -98,6 +100,8 @@ const ConfigurationManagement: React.FC = () => {
     maxFileSize: 10,
     allowedFileTypes: ['pdf'],
     retentionDays: 365,
+    defaultExtractionMethod: 'hybrid',
+    defaultModel: 'gemini-2.5-flash',
     auditLogEnabled: true,
   });
 
@@ -596,6 +600,64 @@ const ConfigurationManagement: React.FC = () => {
                 }
               }}
             />
+          </Grid>
+
+          {/* Processing Defaults Section */}
+          <Grid size={{ xs: 12 }}>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px', color: '#111827', mb: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Processing Defaults
+            </Typography>
+            <Alert severity="info" sx={{ mb: 2, fontSize: '12px' }}>
+              These settings will be applied to all report uploads across the system. Nurses will not be able to change these during upload.
+            </Alert>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ fontSize: '13px' }}>Default AI Model</InputLabel>
+              <Select
+                value={systemConfig.defaultModel || 'gemini-2.5-flash'}
+                onChange={(e) => setSystemConfig(prev => ({ ...prev, defaultModel: e.target.value }))}
+                label="Default AI Model"
+                sx={{
+                  fontSize: '14px',
+                  bgcolor: '#FFFFFF',
+                  '& .MuiSelect-select': {
+                    py: 1.25
+                  }
+                }}
+              >
+                <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Default - Fast & Accurate)</MenuItem>
+                <MenuItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Fastest)</MenuItem>
+                <MenuItem value="gemini-2.0-flash">Gemini 2.0 Flash</MenuItem>
+                <MenuItem value="gpt-4o">GPT-4o (Highest Accuracy)</MenuItem>
+                <MenuItem value="gpt-4.1">GPT-4.1 (Latest)</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ fontSize: '13px' }}>Default Extraction Method</InputLabel>
+              <Select
+                value={systemConfig.defaultExtractionMethod || 'hybrid'}
+                onChange={(e) => setSystemConfig(prev => ({ ...prev, defaultExtractionMethod: e.target.value }))}
+                label="Default Extraction Method"
+                sx={{
+                  fontSize: '14px',
+                  bgcolor: '#FFFFFF',
+                  '& .MuiSelect-select': {
+                    py: 1.25
+                  }
+                }}
+              >
+                <MenuItem value="hybrid">Hybrid (Auto-detect - Recommended)</MenuItem>
+                <MenuItem value="image">Image-based Extraction</MenuItem>
+                <MenuItem value="text">Text-based Extraction</MenuItem>
+                <MenuItem value="pdf">Raw PDF (Direct)</MenuItem>
+              </Select>
+            </FormControl>
           </Grid>
         </Grid>
       </Paper>
