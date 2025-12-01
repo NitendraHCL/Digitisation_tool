@@ -51,7 +51,6 @@ class PDFConverterService {
 
       // Get PDF info to know how many pages
       // We'll convert all pages - limit can be configured via env if needed
-      const images = [];
       const maxPages = parseInt(process.env.MAX_PDF_PAGES) || 100; // Default to 100 pages max, configurable
       const pageTimings = [];
       let totalConversionTime = 0;
@@ -59,72 +58,111 @@ class PDFConverterService {
       let totalBase64Time = 0;
       let totalCleanupTime = 0;
 
-      console.log('[PDF CONVERTER] 4. Starting page conversion (max', maxPages, 'pages)...');
+      console.log('[PDF CONVERTER] 4. Starting PARALLEL page conversion (max', maxPages, 'pages)...');
 
-      for (let i = 1; i <= maxPages; i++) {
+      // Create array of page numbers to process in parallel
+      const pageNumbers = Array.from({ length: maxPages }, (_, i) => i + 1);
+
+      // Process all pages in parallel
+      const pagePromises = pageNumbers.map(async (pageNum) => {
+        const pageStartTime = Date.now();
+        const timings = {
+          conversion: 0,
+          read: 0,
+          base64: 0,
+          cleanup: 0
+        };
+
         try {
-          const pageStartTime = Date.now();
-
           // Convert page to image
           const conversionStart = Date.now();
-          const result = await converter(i);
-          const conversionDuration = Date.now() - conversionStart;
-          totalConversionTime += conversionDuration;
+          const result = await converter(pageNum);
+          timings.conversion = Date.now() - conversionStart;
 
-          if (result && result.path) {
-            // Verify the file actually exists (pdf2pic sometimes returns a path but fails silently)
-            try {
-              await fs.access(result.path);
-            } catch (accessError) {
-              console.error(`[PDF CONVERTER] ERROR: Page ${i} file not found at ${result.path}`);
-              console.error('[PDF CONVERTER] This usually means GraphicsMagick failed to convert the PDF page');
-              continue; // Skip this page and try the next one
-            }
-
-            // Read the image file
-            const readStart = Date.now();
-            const imageBuffer = await fs.readFile(result.path);
-            const readDuration = Date.now() - readStart;
-            totalFileReadTime += readDuration;
-
-            // Convert to base64
-            const base64Start = Date.now();
-            const base64Image = imageBuffer.toString('base64');
-            const base64Duration = Date.now() - base64Start;
-            totalBase64Time += base64Duration;
-
-            // Verify we got actual data
-            if (base64Image.length === 0) {
-              console.error(`[PDF CONVERTER] ERROR: Page ${i} conversion produced 0 bytes`);
-              await fs.unlink(result.path).catch(() => {}); // Clean up if it exists
-              continue; // Skip this page
-            }
-
-            images.push(base64Image);
-
-            // Clean up temp file
-            const cleanupStart = Date.now();
-            await fs.unlink(result.path);
-            const cleanupDuration = Date.now() - cleanupStart;
-            totalCleanupTime += cleanupDuration;
-
-            const pageTotal = Date.now() - pageStartTime;
-            pageTimings.push(pageTotal);
-
-            console.log(`[PDF CONVERTER]    Page ${i}: ${pageTotal}ms (convert: ${conversionDuration}ms, read: ${readDuration}ms, base64: ${base64Duration}ms, cleanup: ${cleanupDuration}ms, size: ${(base64Image.length / 1024).toFixed(2)}KB)`);
-          } else {
+          if (!result || !result.path) {
             // No more pages
-            console.log(`[PDF CONVERTER] 5. No more pages found at page ${i}`);
-            break;
+            return { pageNum, success: false, reason: 'no_more_pages', timings };
           }
+
+          // Verify the file actually exists
+          try {
+            await fs.access(result.path);
+          } catch (accessError) {
+            console.error(`[PDF CONVERTER] ERROR: Page ${pageNum} file not found at ${result.path}`);
+            console.error('[PDF CONVERTER] This usually means GraphicsMagick failed to convert the PDF page');
+            return { pageNum, success: false, reason: 'file_not_found', timings };
+          }
+
+          // Read the image file
+          const readStart = Date.now();
+          const imageBuffer = await fs.readFile(result.path);
+          timings.read = Date.now() - readStart;
+
+          // Convert to base64
+          const base64Start = Date.now();
+          const base64Image = imageBuffer.toString('base64');
+          timings.base64 = Date.now() - base64Start;
+
+          // Verify we got actual data
+          if (base64Image.length === 0) {
+            console.error(`[PDF CONVERTER] ERROR: Page ${pageNum} conversion produced 0 bytes`);
+            await fs.unlink(result.path).catch(() => {});
+            return { pageNum, success: false, reason: 'empty_data', timings };
+          }
+
+          // Clean up temp file
+          const cleanupStart = Date.now();
+          await fs.unlink(result.path);
+          timings.cleanup = Date.now() - cleanupStart;
+
+          const pageTotal = Date.now() - pageStartTime;
+
+          return {
+            pageNum,
+            success: true,
+            base64: base64Image,
+            size: base64Image.length,
+            timings,
+            totalTime: pageTotal
+          };
         } catch (error) {
-          // Reached end of document
+          // Reached end of document or other error
           if (error.message && error.message.includes('Request page out of range')) {
-            console.log(`[PDF CONVERTER] 5. Reached end of document at page ${i-1}`);
-            break;
+            return { pageNum, success: false, reason: 'out_of_range', timings };
           }
-          // Other errors for specific page
-          console.error(`[PDF CONVERTER] ERROR: Page ${i} conversion failed:`, error.message);
+          console.error(`[PDF CONVERTER] ERROR: Page ${pageNum} conversion failed:`, error.message);
+          return { pageNum, success: false, reason: 'error', error: error.message, timings };
+        }
+      });
+
+      // Wait for all pages to complete
+      const allPageResults = await Promise.all(pagePromises);
+
+      // Filter successful pages and sort by page number
+      const successfulPages = allPageResults
+        .filter(result => result.success)
+        .sort((a, b) => a.pageNum - b.pageNum);
+
+      // Extract images in correct page order
+      const images = successfulPages.map(page => page.base64);
+
+      // Calculate timing totals
+      successfulPages.forEach(page => {
+        totalConversionTime += page.timings.conversion;
+        totalFileReadTime += page.timings.read;
+        totalBase64Time += page.timings.base64;
+        totalCleanupTime += page.timings.cleanup;
+        pageTimings.push(page.totalTime);
+
+        console.log(`[PDF CONVERTER]    Page ${page.pageNum}: ${page.totalTime}ms (convert: ${page.timings.conversion}ms, read: ${page.timings.read}ms, base64: ${page.timings.base64}ms, cleanup: ${page.timings.cleanup}ms, size: ${(page.size / 1024).toFixed(2)}KB)`);
+      });
+
+      // Log if we found the end of document
+      const failedPages = allPageResults.filter(result => !result.success);
+      if (failedPages.length > 0) {
+        const endOfDoc = failedPages.find(p => p.reason === 'out_of_range' || p.reason === 'no_more_pages');
+        if (endOfDoc) {
+          console.log(`[PDF CONVERTER] 5. Reached end of document (last successful page: ${successfulPages.length})`);
         }
       }
 
