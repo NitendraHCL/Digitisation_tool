@@ -100,7 +100,7 @@ const ConfigurationManagement: React.FC = () => {
     maxFileSize: 10,
     allowedFileTypes: ['pdf'],
     retentionDays: 365,
-    defaultExtractionMethod: 'hybrid',
+    defaultExtractionMethod: 'image',
     defaultModel: 'gemini-2.5-flash',
     auditLogEnabled: true,
   });

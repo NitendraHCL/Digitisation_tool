@@ -66,6 +66,7 @@ import {
   AddCircle as AddIcon,
   Block as BlockIcon,
   LibraryAdd as ParameterMasterIcon,
+  Publish as PublishIcon,
 } from '@mui/icons-material';
 import api, { BACKEND_BASE_URL } from '../../services/api';
 import { useSnackbar } from 'notistack';
@@ -196,6 +197,8 @@ const ReviewReport: React.FC = () => {
   const [valueType, setValueType] = useState<'numeric' | 'text' | 'alphanumeric' | 'range'>('numeric');
   const [parameterDescription, setParameterDescription] = useState('');
   const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
 
   // Timer helper functions
   const pauseTimer = () => {
@@ -785,6 +788,24 @@ const ReviewReport: React.FC = () => {
     }
   };
 
+  const handlePublish = async () => {
+    if (!id) return;
+
+    setIsPublishing(true);
+    try {
+      const response = await api.post(`/review/${id}/publish`);
+      if (response.data.success) {
+        setIsPublished(true);
+        enqueueSnackbar(`Published ${response.data.insertedCount} test results successfully`, { variant: 'success' });
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to publish report';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleDeleteClick = (parameterId: string, parameterName: string) => {
     setParameterToDelete({ id: parameterId, name: parameterName });
     setShowDeleteDialog(true);
@@ -1241,6 +1262,15 @@ const ReviewReport: React.FC = () => {
               >
                 Repeat Review
               </Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={isPublishing ? <CircularProgress size={20} color="inherit" /> : <PublishIcon />}
+                onClick={handlePublish}
+                disabled={isPublishing || isPublished}
+              >
+                {isPublished ? 'Published' : isPublishing ? 'Publishing...' : 'Publish'}
+              </Button>
             </Box>
           </CardContent>
         </Card>
@@ -1324,10 +1354,9 @@ const ReviewReport: React.FC = () => {
         <Grid size={{ xs: 12, lg: 5 }}>
           <Box sx={{ position: 'sticky', top: 16, height: 'calc(100vh - 150px)' }}>
             {(() => {
-              // Extract filename from path (handle both absolute and relative paths)
-              const filename = report.pdfPath.includes('/')
-                ? report.pdfPath.split('/').pop()
-                : report.pdfPath;
+              // Extract filename from path (handle both Windows and Unix paths)
+              const normalizedPath = report.pdfPath.replace(/\\/g, '/');
+              const filename = normalizedPath.split('/').pop();
               const pdfUrl = `${BACKEND_BASE_URL}/uploads/${filename}`;
 
               console.log('[REVIEW REPORT] ========== PDF URL CONSTRUCTION ==========');
@@ -1964,16 +1993,16 @@ const ReviewReport: React.FC = () => {
                 Data Comparison
               </Typography>
 
-              {/* Patient Name */}
+              {/* Patient Age */}
               <Card sx={{ mb: 2, border: `1px solid ${
-                validationWarnings.some(w => w.field === 'patientName') ? '#FCD34D' : '#D1FAE5'
-              }`, bgcolor: validationWarnings.some(w => w.field === 'patientName') ? '#FFFBEB' : '#F0FDF4' }}>
+                validationWarnings.some(w => w.field === 'patientAge') ? '#FCD34D' : '#D1FAE5'
+              }`, bgcolor: validationWarnings.some(w => w.field === 'patientAge') ? '#FFFBEB' : '#F0FDF4' }}>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                      Patient Name
+                      Patient Age
                     </Typography>
-                    {validationWarnings.some(w => w.field === 'patientName') ? (
+                    {validationWarnings.some(w => w.field === 'patientAge') ? (
                       <Chip icon={<CloseIcon />} label="Mismatch" color="warning" size="small" />
                     ) : (
                       <Chip icon={<CheckIcon />} label="Match" color="success" size="small" />
@@ -1981,15 +2010,15 @@ const ReviewReport: React.FC = () => {
                   </Box>
                   <Grid container spacing={2}>
                     <Grid size={6}>
-                      <Typography variant="caption" color="text.secondary">Order Data:</Typography>
+                      <Typography variant="caption" color="text.secondary">Observation Data:</Typography>
                       <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        {orderData?.patient_name || 'Not specified'}
+                        {orderData?.patient_age || 'Not specified'}
                       </Typography>
                     </Grid>
                     <Grid size={6}>
                       <Typography variant="caption" color="text.secondary">LLM Extracted:</Typography>
                       <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        {reportData?.patientName || 'Not specified'}
+                        {reportData?.patientAge || 'Not specified'}
                       </Typography>
                     </Grid>
                   </Grid>
@@ -2013,9 +2042,9 @@ const ReviewReport: React.FC = () => {
                   </Box>
                   <Grid container spacing={2}>
                     <Grid size={6}>
-                      <Typography variant="caption" color="text.secondary">Order Data:</Typography>
+                      <Typography variant="caption" color="text.secondary">Observation Data:</Typography>
                       <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        {orderData?.gender || 'Not specified'}
+                        {orderData?.gender || orderData?.patient_gender || 'Not specified'}
                       </Typography>
                     </Grid>
                     <Grid size={6}>

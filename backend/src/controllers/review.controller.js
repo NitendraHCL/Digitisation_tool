@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const Report = require('../models/Report');
 const thresholdChecker = require('../services/thresholdChecker.service');
 const LabConfig = require('../models/LabConfig');
-const Order = require('../models/Order');
+// const Order = require('../models/Order');  // No longer needed - using observation collection
 const AuditLog = require('../models/AuditLog');
-const orderValidationService = require('../services/orderValidation.service');
+// const orderValidationService = require('../services/orderValidation.service');  // No longer needed - using observationData from Report
 
 // Helper function to calculate audit summary
 const calculateAuditSummary = (report, frontendReviewDuration = null) => {
@@ -580,6 +581,7 @@ const updateOrderId = async (req, res) => {
       });
     }
 
+    const trimmedOrderId = orderId.trim();
     const report = await Report.findById(id);
 
     if (!report) {
@@ -589,9 +591,9 @@ const updateOrderId = async (req, res) => {
       });
     }
 
-    // Check if orderId already exists (excluding current report)
+    // Step 1: Check if orderId already exists in another report
     const existingReport = await Report.findOne({
-      orderId: orderId.trim(),
+      orderId: trimmedOrderId,
       _id: { $ne: id }
     });
 
@@ -602,18 +604,85 @@ const updateOrderId = async (req, res) => {
       });
     }
 
-    // Update order ID
-    report.orderId = orderId.trim();
+    // Step 2: Query observation collection to validate OrderID exists
+    console.log('[REVIEW CONTROLLER] Querying observation collection for orderId:', trimmedOrderId);
+    const db = mongoose.connection.db;
+    const obs = await db.collection('observation').findOne(
+      { orderId: trimmedOrderId },
+      { sort: { g_creation_time: 1 } }
+    );
+
+    if (!obs) {
+      console.log('[REVIEW CONTROLLER] No Observation found for orderId:', trimmedOrderId);
+      return res.status(404).json({
+        success: false,
+        message: 'No Observation found for this orderId'
+      });
+    }
+
+    console.log('[REVIEW CONTROLLER] Observation found for orderId:', trimmedOrderId);
+
+    // Step 3: Extract obsPart from observation record
+    const obsPart = {
+      account_time_zone: obs.account_time_zone || '',
+      uhId: obs.uhId || '',
+      patientId: obs.patientId || '',
+      facility_id: obs.facility_id || '',
+      account_id: obs.account_id || '',
+      serviceType_code: obs.serviceType_code || '',
+      orderId: obs.orderId || '',
+      accessionIdentifier: obs.accessionIdentifier || '',
+      category: obs.category || '',
+      episode_id: obs.episode_id || '',
+      patient_age: obs.patient_age || '',
+      patient_dob: obs.patient_dob || '',
+      patient_gender: obs.patient_gender || '',
+      isOutsourced: obs.isOutsourced || '',
+      patientType: obs.patientType || '',
+      patient_name: obs.patient_name || '',
+      referBy: obs.referBy || '',
+      payer_id: obs.payer_id || '',
+      payer_name: obs.payer_name || '',
+      payer_type: obs.payer_type || '',
+      orderDateTime: obs.orderDateTime || '',
+      telecom: obs.telecom || '',
+      center_type_name: obs.center_type_name || '',
+      package_id: obs.package_id || '',
+      part_of_package: obs.part_of_package || '',
+      package_name: obs.package_name || '',
+      email: obs.email || '',
+      center_name: obs.center_name || '',
+      orderBy: obs.orderBy || '',
+      care_type: obs.care_type || '',
+      care_type_name: obs.care_type_name || '',
+      status: obs.status || '',
+      acknowledgedDateTime: obs.acknowledgedDateTime || '',
+      outSourceCentre: obs.outSourceCentre || '',
+      orderReferenceId: obs.orderReferenceId || '',
+      reportStatus: obs.reportStatus || '',
+      uploadedDocumentId: obs.uploadedDocumentId || '',
+      verificationDateTime: obs.verificationDateTime || '',
+      outSourceCentre_id: obs.outSourceCentre_id || '',
+      admittingDoctor: obs.admittingDoctor || '',
+      cug_code: obs.cug_code || '',
+      package_service_code: obs.outsource_service_code || '',
+      fetchedAt: new Date()
+    };
+
+    // Step 4: Update report with orderId and observationData
+    report.orderId = trimmedOrderId;
+    report.observationData = obsPart;
     await report.save();
 
-    console.log('[REVIEW CONTROLLER] Order ID updated successfully');
+    console.log('[REVIEW CONTROLLER] Order ID and Observation data saved successfully');
 
     res.json({
       success: true,
-      message: 'Order ID updated successfully',
+      message: 'Order ID validated and saved successfully',
       data: {
         reportId: report._id,
-        orderId: report.orderId
+        orderId: report.orderId,
+        observationData: obsPart
       }
     });
 
@@ -662,31 +731,72 @@ const approveReport = async (req, res) => {
       });
     }
 
-    // Fetch and validate order
-    console.log('[REVIEW CONTROLLER] Fetching order for validation:', report.orderId);
-    const order = await orderValidationService.fetchOrderDetails(report.orderId);
+    // Use observationData stored in report (populated when OrderID was saved)
+    console.log('[REVIEW CONTROLLER] Using observation data for validation:', report.orderId);
+    const obsData = report.observationData;
 
-    if (!order) {
+    if (!obsData || !obsData.orderId) {
       return res.status(404).json({
         success: false,
-        message: `Order not found with ID: ${report.orderId}. Please verify the Order ID.`,
+        message: `Observation data not found for Order ID: ${report.orderId}. Please re-save the Order ID.`,
         requiresValidOrder: true
       });
     }
 
-    // Check if patient name exists in order
-    const nameCheck = orderValidationService.checkPatientNameRequired(order);
-    if (nameCheck.required) {
-      return res.status(400).json({
-        success: false,
-        message: nameCheck.message,
-        requiresPatientName: true,
-        orderMissing: nameCheck.orderMissing
-      });
+    // Validate demographics between observation data and report (age and gender only)
+    const validations = [];
+
+    // Validate age
+    const obsAge = obsData.patient_age || '';
+    const reportAge = report.extractedData?.patientAge || '';
+
+    if (obsAge && reportAge) {
+      // Extract years from age strings for comparison (e.g., "35 Y,2 M,5 D" -> 35)
+      const extractYears = (age) => {
+        const match = String(age).match(/(\d+)\s*Y/i);
+        return match ? parseInt(match[1]) : null;
+      };
+
+      const obsYears = extractYears(obsAge);
+      const reportYears = extractYears(reportAge);
+
+      // If can't extract years, do string comparison; otherwise allow 1 year difference
+      const ageMatch = (obsYears !== null && reportYears !== null)
+        ? Math.abs(obsYears - reportYears) <= 1
+        : obsAge.trim() === reportAge.trim();
+
+      if (!ageMatch) {
+        validations.push({
+          type: 'AGE_MISMATCH',
+          field: 'patientAge',
+          orderValue: obsAge,
+          reportValue: reportAge,
+          message: `Age mismatch: Observation has "${obsAge}", Report has "${reportAge}"`
+        });
+      }
     }
 
-    // Validate demographics between order and report
-    const validationResult = orderValidationService.validateDemographics(order, report.extractedData);
+    // Validate gender
+    const obsGender = obsData.patient_gender || '';
+    const reportGender = report.extractedData?.patientGender || '';
+
+    if (obsGender && reportGender) {
+      if (obsGender.toLowerCase() !== reportGender.toLowerCase()) {
+        validations.push({
+          type: 'GENDER_MISMATCH',
+          field: 'patientGender',
+          orderValue: obsGender,
+          reportValue: reportGender,
+          message: `Gender mismatch: Observation has "${obsGender}", Report has "${reportGender}"`
+        });
+      }
+    }
+
+    const validationResult = {
+      hasWarnings: validations.length > 0,
+      warnings: validations,
+      summary: validations.length === 0 ? 'All demographics match' : `Found ${validations.length} mismatch(es)`
+    };
 
     // If there are warnings and user hasn't confirmed
     if (validationResult.hasWarnings && !confirmMismatch) {
@@ -694,14 +804,14 @@ const approveReport = async (req, res) => {
 
       return res.status(400).json({
         success: false,
-        message: 'Data mismatches found between Order and Report. Please review and confirm.',
+        message: 'Data mismatches found between Observation and Report. Please review and confirm.',
         requiresConfirmation: true,
         validationWarnings: validationResult.warnings,
         orderData: {
-          patient_name: order.patient_name,
-          patient_age: order.patient_age,
-          gender: order.gender,
-          date_of_test: order.date_of_test
+          patient_name: obsData.patient_name,
+          patient_age: obsData.patient_age,
+          gender: obsData.patient_gender,
+          date_of_test: obsData.orderDateTime
         },
         reportData: {
           patientName: report.extractedData?.patientName,
@@ -840,8 +950,17 @@ const approveReport = async (req, res) => {
       console.log('[REVIEW CONTROLLER] ========== END EXTENSIVE DEBUG LOGGING ==========');
     }
 
-    // Generate finalData using Order data (validated against Report data)
-    const metaData = orderValidationService.populateMetaFromOrder(order);
+    // Generate finalData using Observation data (validated against Report data)
+    const metaData = {
+      USER_CODE: obsData.orderId || report.orderId,
+      cug_code: obsData.cug_code || '',
+      VISIT_CODE: '', // Not available in observation data
+      patient_age: obsData.patient_age || '',
+      gender: obsData.patient_gender || '',
+      date_of_test: obsData.orderDateTime || '',
+      lab_name: report.extractedData?.labName || obsData.center_name || '',
+      location: '' // Not available in observation data
+    };
 
     // Override with report data if available and no mismatches
     if (!validationResult.hasWarnings || confirmMismatch) {
@@ -1061,23 +1180,18 @@ const getValidationData = async (req, res) => {
       });
     }
 
-    // Import validation service
-    const orderValidationService = require('../services/orderValidation.service');
+    // Use observationData stored in report (populated when OrderID was saved)
+    const obsData = report.observationData;
 
-    // Fetch and validate order
-    console.log('[REVIEW CONTROLLER] Fetching order for validation:', report.orderId);
-    const order = await orderValidationService.fetchOrderDetails(report.orderId);
-
-    if (!order) {
-      // Return as a warning in the dialog instead of blocking with 404
-      console.log('[REVIEW CONTROLLER] Order not found, returning as critical warning');
+    if (!obsData || !obsData.orderId) {
+      console.log('[REVIEW CONTROLLER] No observation data found in report');
       return res.status(200).json({
         success: true,
         hasWarnings: true,
         validationWarnings: [{
-          type: 'ORDER_NOT_FOUND',
+          type: 'OBSERVATION_NOT_FOUND',
           field: 'orderId',
-          message: `Order ID "${report.orderId}" not found in database. Please verify the Order ID.`,
+          message: `Observation data not found for Order ID "${report.orderId}". Please re-save the Order ID.`,
           severity: 'critical',
           allowOverride: false
         }],
@@ -1091,30 +1205,73 @@ const getValidationData = async (req, res) => {
       });
     }
 
-    // Check if patient name exists in order
-    const nameCheck = orderValidationService.checkPatientNameRequired(order);
-    if (nameCheck.required) {
-      return res.status(400).json({
-        success: false,
-        message: nameCheck.message,
-        requiresPatientName: true,
-        orderMissing: nameCheck.orderMissing
-      });
+    console.log('[REVIEW CONTROLLER] Using observation data for validation');
+    console.log('[REVIEW CONTROLLER] ObservationData from DB:', JSON.stringify({
+      patient_age: obsData.patient_age,
+      patient_gender: obsData.patient_gender,
+      orderId: obsData.orderId,
+      fetchedAt: obsData.fetchedAt
+    }, null, 2));
+
+    // Validate demographics between observation data and report (age and gender only)
+    const validations = [];
+
+    // Validate age
+    const obsAge = obsData.patient_age || '';
+    const reportAge = report.extractedData?.patientAge || '';
+
+    if (obsAge && reportAge) {
+      // Extract years from age strings for comparison (e.g., "35 Y,2 M,5 D" -> 35)
+      const extractYears = (age) => {
+        const match = String(age).match(/(\d+)\s*Y/i);
+        return match ? parseInt(match[1]) : null;
+      };
+
+      const obsYears = extractYears(obsAge);
+      const reportYears = extractYears(reportAge);
+
+      // If can't extract years, do string comparison; otherwise allow 1 year difference
+      const ageMatch = (obsYears !== null && reportYears !== null)
+        ? Math.abs(obsYears - reportYears) <= 1
+        : obsAge.trim() === reportAge.trim();
+
+      if (!ageMatch) {
+        validations.push({
+          type: 'AGE_MISMATCH',
+          field: 'patientAge',
+          orderValue: obsAge,
+          reportValue: reportAge,
+          message: `Age mismatch: Observation has "${obsAge}", Report has "${reportAge}"`
+        });
+      }
     }
 
-    // Validate demographics between order and report
-    const validationResult = orderValidationService.validateDemographics(order, report.extractedData);
+    // Validate gender
+    const obsGender = obsData.patient_gender || '';
+    const reportGender = report.extractedData?.patientGender || '';
+
+    if (obsGender && reportGender) {
+      if (obsGender.toLowerCase() !== reportGender.toLowerCase()) {
+        validations.push({
+          type: 'GENDER_MISMATCH',
+          field: 'patientGender',
+          orderValue: obsGender,
+          reportValue: reportGender,
+          message: `Gender mismatch: Observation has "${obsGender}", Report has "${reportGender}"`
+        });
+      }
+    }
 
     // Return validation data
     return res.status(200).json({
       success: true,
-      hasWarnings: validationResult.hasWarnings,
-      validationWarnings: validationResult.warnings,
+      hasWarnings: validations.length > 0,
+      validationWarnings: validations,
       orderData: {
-        patient_name: order.patient_name,
-        patient_age: order.patient_age,
-        gender: order.gender,
-        date_of_test: order.date_of_test
+        patient_name: obsData.patient_name,
+        patient_age: obsData.patient_age,
+        gender: obsData.patient_gender,
+        date_of_test: obsData.orderDateTime
       },
       reportData: {
         patientName: report.extractedData?.patientName,
@@ -1122,7 +1279,9 @@ const getValidationData = async (req, res) => {
         patientGender: report.extractedData?.patientGender,
         dateOfTest: report.extractedData?.dateOfTest
       },
-      summary: validationResult.summary
+      summary: validations.length === 0
+        ? 'All demographics match'
+        : `Found ${validations.length} mismatch(es)`
     });
   } catch (error) {
     console.error('[REVIEW CONTROLLER] Get validation data error:', error);
@@ -1262,6 +1421,270 @@ const deleteParameter = async (req, res) => {
   }
 };
 
+// Publish report to digitization_observation collection
+const publishReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('[REVIEW CONTROLLER] Publishing report:', id);
+
+    // 1. Find the approved report with finalData
+    const report = await Report.findById(id);
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Report not found' });
+    }
+
+    if (report.status !== 'approved') {
+      return res.status(400).json({ success: false, message: 'Only approved reports can be published' });
+    }
+
+    if (!report.finalData || !report.finalData.results || report.finalData.results.length === 0) {
+      return res.status(400).json({ success: false, message: 'No test results to publish' });
+    }
+
+    const obs = report.observationData || {};
+    const results = report.finalData.results;
+
+    // Validation - check observation data conditions
+    // Note: part_of_package may be stored as string "true" or boolean true
+    if (
+      obs.status !== "Final" ||
+      String(obs.part_of_package) !== "true" ||
+      obs.serviceType_code !== "pathology"
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "Observation data does not meet required conditions (status, part_of_package, serviceType_code)"
+      });
+    }
+
+    // 2. Unique ID generator
+    let uniqueNumber = 0;
+    const nextNumber = () => {
+      if (uniqueNumber >= 99) uniqueNumber = 0;
+      uniqueNumber++;
+      return uniqueNumber;
+    };
+    const getUniqueId = () => `${crypto.randomUUID()}-${nextNumber()}`;
+
+    // 3. Build rows for each result
+    const allResults = [];
+
+    for (const api of results) {
+      // obsPart - from observationData (same for all rows)
+      const obsPart = {
+        account_time_zone: obs.account_time_zone || "",
+        uhId: obs.uhId || "",
+        patientId: obs.patientId || "",
+        facility_id: obs.facility_id || "",
+        account_id: obs.account_id || "",
+        serviceType_code: obs.serviceType_code || "",
+        orderId: obs.orderId || "",
+        accessionIdentifier: obs.accessionIdentifier || "",
+        category: obs.category || "",
+        episode_id: obs.episode_id || "",
+        patient_age: obs.patient_age || "",
+        patient_dob: obs.patient_dob || "",
+        patient_gender: obs.patient_gender || "",
+        isOutsourced: obs.isOutsourced || "",
+        patientType: obs.patientType || "",
+        patient_name: obs.patient_name || "",
+        referBy: obs.referBy || "",
+        payer_id: obs.payer_id || "",
+        payer_name: obs.payer_name || "",
+        payer_type: obs.payer_type || "",
+        orderDateTime: obs.orderDateTime || "",
+        telecom: obs.telecom || "",
+        center_type_name: obs.center_type_name || "",
+        package_id: obs.package_id || "",
+        part_of_package: obs.part_of_package || "",
+        package_name: obs.package_name || "",
+        email: obs.email || "",
+        center_name: obs.center_name || "",
+        orderBy: obs.orderBy || "",
+        care_type: obs.care_type || "",
+        care_type_name: obs.care_type_name || "",
+        status: obs.status || "",
+        acknowledgedDateTime: obs.acknowledgedDateTime || "",
+        outSourceCentre: obs.outSourceCentre || "",
+        orderReferenceId: obs.orderReferenceId || "",
+        reportStatus: obs.reportStatus || "",
+        uploadedDocumentId: obs.uploadedDocumentId || "",
+        verificationDateTime: obs.verificationDateTime || "",
+        outSourceCentre_id: obs.outSourceCentre_id || "",
+        admittingDoctor: obs.admittingDoctor || "",
+        cug_code: obs.cug_code || "",
+        package_service_code: obs.outsource_service_code || ""
+      };
+
+      // fields - fixed + blank + null values (same for all rows)
+      const fields = {
+        // ------------ FIXED FIELDS ------------
+        g_created_by_id: "Richa001",
+        g_created_by_name: "Richa",
+        g_created_by_loginId: "richajain",
+        g_created_by_role: "Admin",
+        g_created_by_role_type: "AdminRole",
+        g_modified_by_id: "Richa001",
+        g_modified_by_loginId: "richajain",
+        g_modified_by_name: "Richa",
+        g_modified_by_role: "Admin",
+        g_modified_by_role_type: "AdminRole",
+        g_soft_delete: "N",
+        isResultCritical: false,
+        isAmended: false,
+        isProvisional: false,
+
+        // ------------ BLANK FIELDS (empty string "") ------------
+        serviceType: "",
+        orderingDoctorId: "",
+        orderingDoctorName: "",
+        serviceItemCode: "",
+        department: "",
+        subDepartment: "",
+        departmentId: "",
+        subDepartmentId: "",
+        sampleCollectionDateTime: "",
+        specimen: "",
+        encounter_id: "",
+        note: "",
+        remarks: "",
+        interpretation: "",
+        advice: "",
+        resultType: "",
+        time: "",
+        specimenId: "",
+        isUniqueBarCodeRequired: "",
+        serviceDisplayName: "",
+        employer_name: "",
+        employee_id: "",
+        relation: "",
+        nurse_remark: "",
+        orderedFrom: "",
+        payer_group: "",
+        payer_sub_group: "",
+        op_no: "",
+        package_type: "",
+        package_sub_type: "",
+        package_type_code: "",
+        package_sub_type_code: "",
+        bill_date_time: "",
+        archival_ref_dt: "",
+        address: {
+          city: "",
+          cityDisplayName: "",
+          country: "",
+          countryDisplayName: "",
+          latitude: "",
+          longitude: "",
+          pincode: "",
+          pincodeDisplayName: "",
+          state: "",
+          stateDisplayName: "",
+          street1: "",
+          street2: "",
+          street3: ""
+        },
+        g_migration_status: "",
+        g_migration_billing: "",
+        bookingDate: "",
+        hasMember: "",
+        partOf: "",
+        partOfName: "",
+        abnormalValueInterpretation: "",
+        referById: "",
+        referType: "",
+        referType_display: "",
+        employee_department: "",
+        employee_subDepartment: "",
+        package_start_date: "",
+        isBloodRequest: "",
+        alert_notification: "",
+        g_archival_date_time: "",
+        s3: "",
+        employee_department_id: "",
+        employee_subDepartment_id: "",
+
+        // Tag Data
+        tag_data: [
+          {
+            key_name: "",
+            key_value_code: "",
+            key_value_display: "",
+            visible: ""
+          }
+        ],
+
+        // ------------ NULL FIELDS ------------
+        archival_required: null,
+        containsBasicInfo: null,
+        service_sequence: null,
+        isMultiStage: null,
+        isConfidential: null,
+        priority: null,
+        priorityCode: null,
+        isResultBoldOnPrint: null,
+        isNABLCertified: null,
+        serviceRequestId: null,
+        service_code: null,
+        tray_code: null,
+        package_serviceRequestId: null,
+        isInsourced: null,
+        systemName: null
+      };
+
+      // apiPart - from individual result (unique per row)
+      const apiPart = {
+        serviceItemName: api.serviceItemName || "",
+        value: api.value || "",
+        method: api.method || "",
+        impression: api.impression || "",
+        labServiceType: api.labServiceType || "",
+        outsource_service_code: api.serviceItemName || "",
+        unit: api.unit || "",
+        referenceRange: {
+          high: api.referenceRange?.high || "",
+          low: api.referenceRange?.low || "",
+          referenceRange: api.referenceRange?.referenceRange || ""
+        }
+      };
+
+      const rowId = getUniqueId();
+
+      const finalRow = {
+        ...obsPart,
+        ...fields,
+        ...apiPart,
+        id: rowId,
+        _id: rowId,
+        g_creation_time: BigInt(Date.now()) * BigInt(1000000),
+        g_modify_time: BigInt(Date.now()) * BigInt(1000000)
+      };
+
+      allResults.push(finalRow);
+    }
+
+    // 4. Insert into digitization_observation
+    const db = mongoose.connection.db;
+    const collection = db.collection('digitization_observation');
+    const insertResult = await collection.insertMany(allResults);
+
+    console.log(`[REVIEW CONTROLLER] Published ${insertResult.insertedCount} rows to digitization_observation`);
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully published ${insertResult.insertedCount} test results`,
+      insertedCount: insertResult.insertedCount
+    });
+  } catch (error) {
+    console.error('[REVIEW CONTROLLER] Publish error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to publish report',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getReportForReview,
   editParameter,
@@ -1272,5 +1695,6 @@ module.exports = {
   rejectReport,
   getEditHistory,
   getValidationData,
-  deleteParameter
+  deleteParameter,
+  publishReport
 };

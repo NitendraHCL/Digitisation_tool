@@ -10,7 +10,8 @@ const {
   rejectReport,
   getEditHistory,
   getValidationData,
-  deleteParameter
+  deleteParameter,
+  publishReport
 } = require('../controllers/review.controller');
 const { authenticate, isNurseOrAdmin } = require('../middleware/auth.middleware');
 
@@ -47,6 +48,9 @@ router.post('/:id/reject', rejectReport);
 
 // Get edit history
 router.get('/:id/history', getEditHistory);
+
+// Publish report to digitization_observation
+router.post('/:id/publish', publishReport);
 
 console.log('[REVIEW ROUTES] Routes loaded successfully');
 

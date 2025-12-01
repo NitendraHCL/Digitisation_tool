@@ -23,7 +23,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
   if (!extractionMethod || !model) {
     console.log('[PROCESS] Fetching default processing settings from LabConfig...');
     const labConfig = await LabConfig.getConfig();
-    extractionMethod = extractionMethod || labConfig.systemConfig.defaultExtractionMethod || 'hybrid';
+    extractionMethod = extractionMethod || labConfig.systemConfig.defaultExtractionMethod || 'image';
     model = model || labConfig.systemConfig.defaultModel || 'gemini-2.5-flash';
     console.log('[PROCESS] Using defaults - Method:', extractionMethod, ', Model:', model);
   }
@@ -177,7 +177,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       console.log('[PROCESS] 10. Calling', modelName, 'with images (PAGE-BY-PAGE)...');
       const gptStartTime = Date.now();
 
-      // Route to appropriate model - USING PAGE-WISE EXTRACTION
+      // Route to appropriate model - USING PAGE-WISE EXTRACTION (15 parallel API calls)
       if (model === 'gpt-4o' || model === 'gpt-4.1') {
         const gptModel = model === 'gpt-4.1' ? 'gpt-4.1-2025-04-14' : 'gpt-4o';
         extractedData = await gpt4oExtractor.extractFromImagesPageWise(images, report.orderId, gptModel);
@@ -409,6 +409,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       gptRawResponse: extractedData,
       labName: extractedData.labName,
       patientName: extractedData.patientName,
+      patientAge: extractedData.patientAge,
       patientGender: extractedData.patientGender,
       dateOfTest: extractedData.dateOfTest,
       results: extractedData.results,

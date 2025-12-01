@@ -79,7 +79,7 @@ const UploadReport: React.FC = () => {
   const [showConfig, setShowConfig] = useState(false);
   const [configDefaults, setConfigDefaults] = useState<{ model: string; extractionMethod: string }>({
     model: 'Gemini 2.5 Flash',
-    extractionMethod: 'Hybrid'
+    extractionMethod: 'Image-based'
   });
 
   // Fetch config defaults on mount

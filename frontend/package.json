@@ -45,12 +45,6 @@
     "lint:fix": "eslint src --config eslint.config.security.js --fix",
     "lint:report": "eslint src --config eslint.config.security.js --format html --output-file eslint-security-report.html"
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
   "browserslist": {
     "production": [
       ">0.2%",

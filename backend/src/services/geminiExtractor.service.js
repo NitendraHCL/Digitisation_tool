@@ -47,6 +47,7 @@ LAB_NAME: Unknown Lab
 
 **EXTRACT PATIENT DEMOGRAPHICS from the report header:**
 PATIENT_NAME: [patient name as shown in report]
+PATIENT_AGE: [patient age as shown in report, e.g., "35 Y" or "35 Years" or "35"]
 PATIENT_GENDER: [male/female/other]
 DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
@@ -130,6 +131,7 @@ ${text}`;
 
       // Initialize patient demographics
       let patientName = null;
+      let patientAge = null;
       let patientGender = null;
       let dateOfTest = null;
 
@@ -144,6 +146,12 @@ ${text}`;
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
         patientName = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
         console.log('[GEMINI] 18b. Patient name extracted:', patientName);
+        allLines.shift();
+      }
+
+      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
+        patientAge = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        console.log('[GEMINI] 18b1. Patient age extracted:', patientAge);
         allLines.shift();
       }
 
@@ -262,6 +270,7 @@ ${text}`;
       return {
         labName: labName,
         patientName: patientName,
+        patientAge: patientAge,
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
@@ -319,6 +328,12 @@ LAB_NAME: [exact lab name from the report]
 
 If not found in the configured list, add:
 LAB_NAME: Unknown Lab
+
+**EXTRACT PATIENT DEMOGRAPHICS from the report header:**
+PATIENT_NAME: [patient name as shown in report]
+PATIENT_AGE: [patient age as shown in report, e.g., "35 Y" or "35 Years" or "35"]
+PATIENT_GENDER: [male/female/other]
+DATE_OF_TEST: [date in YYYY-MM-DD format if possible]
 
 Then extract all test parameters from the images and return the data in this exact format:
 
@@ -429,6 +444,7 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Initialize patient demographics
       let patientName = null;
+      let patientAge = null;
       let patientGender = null;
       let dateOfTest = null;
 
@@ -443,6 +459,12 @@ The pages in this lab report are provided in their original sequential order. Yo
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
         patientName = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
         console.log('[GEMINI VISION] 18b. Patient name extracted:', patientName);
+        allLines.shift();
+      }
+
+      if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
+        patientAge = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        console.log('[GEMINI VISION] 18b1. Patient age extracted:', patientAge);
         allLines.shift();
       }
 
@@ -572,6 +594,7 @@ The pages in this lab report are provided in their original sequential order. Yo
       return {
         labName: labName,
         patientName: patientName,
+        patientAge: patientAge,
         patientGender: patientGender,
         dateOfTest: dateOfTest,
         results: results,
@@ -634,6 +657,7 @@ ${labNames}
 For the FIRST page only: identify and return the following header information:
 LAB_NAME: [exact lab name from the report, or "Unknown Lab" if not in the list above]
 PATIENT_NAME: [patient's full name from the report]
+PATIENT_AGE: [patient age as shown in report, e.g., "35 Y" or "35 Years" or "35"]
 PATIENT_GENDER: [male/female/other, extract from report]
 DATE_OF_TEST: [date of the test in YYYY-MM-DD format if available]
 
@@ -657,6 +681,7 @@ The pages in this lab report are provided in their original sequential order. Yo
       const allResults = [];
       let labNameGlobal = null;
       let patientNameGlobal = null;
+      let patientAgeGlobal = null;
       let patientGenderGlobal = null;
       let dateOfTestGlobal = null;
       let totalInputTokens = 0;
@@ -735,6 +760,7 @@ The pages in this lab report are provided in their original sequential order. Yo
             const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
             let labNameFromPage = null;
             let patientNameFromPage = null;
+            let patientAgeFromPage = null;
             let patientGenderFromPage = null;
             let dateOfTestFromPage = null;
 
@@ -749,6 +775,13 @@ The pages in this lab report are provided in their original sequential order. Yo
             if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
               patientNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
               console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d1. Patient name: ${patientNameFromPage}`);
+              allLines.shift();
+            }
+
+            // Check for patient age (only expected on first page)
+            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
+              patientAgeFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d1a. Patient age: ${patientAgeFromPage}`);
               allLines.shift();
             }
 
@@ -844,6 +877,7 @@ The pages in this lab report are provided in their original sequential order. Yo
               results: pageResults,
               labName: labNameFromPage,
               patientName: patientNameFromPage,
+              patientAge: patientAgeFromPage,
               patientGender: patientGenderFromPage,
               dateOfTest: dateOfTestFromPage,
               extractionMetadata: {
@@ -885,6 +919,7 @@ The pages in this lab report are provided in their original sequential order. Yo
         // Extract patient demographics from first page
         if (pageData.pageNumber === 1) {
           if (pageData.patientName) patientNameGlobal = pageData.patientName;
+          if (pageData.patientAge) patientAgeGlobal = pageData.patientAge;
           if (pageData.patientGender) patientGenderGlobal = pageData.patientGender;
           if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
         }
@@ -933,6 +968,7 @@ The pages in this lab report are provided in their original sequential order. Yo
       return {
         labName: labNameGlobal || 'Unknown Lab',
         patientName: patientNameGlobal,
+        patientAge: patientAgeGlobal,
         patientGender: patientGenderGlobal,
         dateOfTest: dateOfTestGlobal,
         results: allResults,

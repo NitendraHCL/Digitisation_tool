@@ -249,6 +249,7 @@ const getReportById = async (req, res) => {
     }
 
     console.log('[REPORT CONTROLLER] Report found:', report.orderId);
+    console.log('[REPORT CONTROLLER] Has observationData:', !!report.observationData, report.observationData?.orderId || 'N/A');
 
     res.json({
       success: true,

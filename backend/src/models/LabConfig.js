@@ -89,7 +89,7 @@ const labConfigSchema = new mongoose.Schema({
     defaultExtractionMethod: {
       type: String,
       enum: ['text', 'image', 'hybrid', 'pdf'],
-      default: 'hybrid'
+      default: 'image'
     },
     defaultModel: {
       type: String,
@@ -147,7 +147,7 @@ labConfigSchema.statics.getConfig = async function() {
         allowedFileTypes: ['pdf'],
         retentionDays: 365,
         auditLogEnabled: true,
-        defaultExtractionMethod: 'hybrid',
+        defaultExtractionMethod: 'image',
         defaultModel: 'gemini-2.5-flash'
       },
       thresholdPercentage: 200,
