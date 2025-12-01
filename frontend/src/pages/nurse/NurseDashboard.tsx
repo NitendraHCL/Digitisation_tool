@@ -1,47 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Paper,
-  Chip,
-  IconButton,
-  LinearProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Avatar,
-  useTheme,
-  Tooltip,
-  Alert,
-  Grid,
-} from '@mui/material';
-import {
-  CloudUpload as UploadIcon,
-  Assessment as StatsIcon,
-  CheckCircle as ApprovedIcon,
-  Cancel as RejectedIcon,
-  Schedule as PendingIcon,
-  Visibility as ViewIcon,
-  GetApp as DownloadIcon,
-  PlayCircle as ProcessIcon,
-  Flag as FlagIcon,
-  TrendingUp as TrendingUpIcon,
-  Assignment as ReportIcon,
-} from '@mui/icons-material';
+import { LinearProgress } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { Report } from '../../types';
 import api from '../../services/api';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../contexts/AuthContext';
+import { theme } from '../../styles/theme';
+import CustomButton from '../../components/ui/CustomButton';
+import StatCard from '../../components/ui/StatCard';
+import AlertBox from '../../components/ui/AlertBox';
+import Table from '../../components/ui/Table';
+import Badge from '../../components/ui/Badge';
 
 const NurseDashboard: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
@@ -66,7 +37,6 @@ const NurseDashboard: React.FC = () => {
       const response = await api.get('/reports');
       const reportsData = response.data.data || [];
 
-      // Ensure reportsData is an array
       if (!Array.isArray(reportsData)) {
         console.error('[DASHBOARD] Reports data is not an array:', reportsData);
         setReports([]);
@@ -76,7 +46,6 @@ const NurseDashboard: React.FC = () => {
 
       setReports(reportsData);
 
-      // Calculate stats
       setStats({
         total: reportsData.length,
         uploaded: reportsData.filter((r: Report) => r.status === 'uploaded').length,
@@ -87,7 +56,7 @@ const NurseDashboard: React.FC = () => {
       });
     } catch (error: any) {
       console.error('[DASHBOARD] Failed to fetch reports:', error);
-      setReports([]); // Ensure reports is always an array
+      setReports([]);
       enqueueSnackbar(error.response?.data?.message || 'Failed to fetch reports', { variant: 'error' });
     } finally {
       setLoading(false);
@@ -98,14 +67,14 @@ const NurseDashboard: React.FC = () => {
     try {
       await api.post(`/reports/${reportId}/process`);
       enqueueSnackbar('Report processing started', { variant: 'info' });
-      setTimeout(fetchReports, 2000); // Refresh after 2 seconds
+      setTimeout(fetchReports, 2000);
     } catch (error) {
       enqueueSnackbar('Failed to process report', { variant: 'error' });
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, any> = {
+  const getStatusBadgeVariant = (status: string): 'success' | 'warning' | 'error' | 'default' | 'info' => {
+    const statusMap: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
       uploaded: 'default',
       processing: 'info',
       ready: 'warning',
@@ -113,249 +82,328 @@ const NurseDashboard: React.FC = () => {
       rejected: 'error',
       error: 'error',
     };
-    return colors[status] || 'default';
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <ApprovedIcon />;
-      case 'rejected':
-        return <RejectedIcon />;
-      case 'ready':
-        return <PendingIcon />;
-      default:
-        return null;
-    }
+    return statusMap[status] || 'default';
   };
 
   const getFlagIndicator = (report: Report) => {
     if (!report.uiIndicators) return null;
 
-    const colors: Record<string, string> = {
-      green: theme.palette.success.main,
-      yellow: theme.palette.warning.light,
-      orange: theme.palette.warning.main,
-      red: theme.palette.error.main,
+    const colorMap: Record<string, string> = {
+      green: theme.colors.success,
+      yellow: '#F59E0B',
+      orange: '#F97316',
+      red: theme.colors.error,
     };
 
+    const color = colorMap[report.uiIndicators.color] || theme.colors.textSecondary;
+
     return (
-      <Tooltip title={report.flags?.summary || 'No issues'}>
-        <Box
-          sx={{
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            bgcolor: colors[report.uiIndicators.color],
-            display: 'inline-block',
-            mr: 1,
-          }}
-        />
-      </Tooltip>
+      <div
+        title={report.flags?.summary || 'No issues'}
+        style={{
+          width: '12px',
+          height: '12px',
+          borderRadius: '50%',
+          backgroundColor: color,
+        }}
+      />
     );
   };
 
-  const statCards = [
+  const tableColumns = [
     {
-      title: 'Total Reports',
-      value: stats.total,
-      icon: <ReportIcon />,
-      color: theme.palette.primary.main,
-      trend: '+12%',
+      key: 'flag',
+      label: 'Flag',
+      width: '60px',
+      align: 'center' as const,
+      render: (_: any, row: Report) => getFlagIndicator(row),
     },
     {
-      title: 'Ready for Review',
-      value: stats.ready,
-      icon: <PendingIcon />,
-      color: theme.palette.warning.main,
-      trend: stats.ready > 0 ? `${stats.ready} pending` : 'All clear',
+      key: 'orderId',
+      label: 'Order ID',
+      render: (value: string) => (
+        <span style={{ fontWeight: theme.typography.weights.medium }}>{value}</span>
+      ),
     },
     {
-      title: 'Approved',
-      value: stats.approved,
-      icon: <ApprovedIcon />,
-      color: theme.palette.success.main,
-      trend: `${Math.round((stats.approved / (stats.total || 1)) * 100)}% approval rate`,
+      key: 'createdAt',
+      label: 'Upload Date',
+      render: (value: string) => new Date(value).toLocaleDateString(),
     },
     {
-      title: 'Flagged',
-      value: stats.flagged,
-      icon: <FlagIcon />,
-      color: theme.palette.error.main,
-      trend: stats.flagged > 0 ? 'Needs attention' : 'No issues',
+      key: 'status',
+      label: 'Status',
+      render: (value: string) => (
+        <Badge label={value.toUpperCase()} variant={getStatusBadgeVariant(value)} />
+      ),
+    },
+    {
+      key: 'labName',
+      label: 'Lab',
+      render: (_: any, row: Report) => row.extractedData?.labName || '-',
+    },
+    {
+      key: 'parameters',
+      label: 'Parameters',
+      align: 'center' as const,
+      render: (_: any, row: Report) => row.extractedData?.results?.length || 0,
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      align: 'center' as const,
+      width: '150px',
+      render: (_: any, row: Report) => (
+        <div style={{ display: 'flex', gap: theme.spacing.xs, justifyContent: 'center' }}>
+          {row.status === 'uploaded' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleProcess(row._id);
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: theme.typography.sizes.tiny,
+                fontWeight: theme.typography.weights.medium,
+                fontFamily: theme.typography.fontFamily,
+                backgroundColor: theme.colors.accent,
+                color: theme.colors.surface,
+                border: 'none',
+                borderRadius: theme.radius.sm,
+                cursor: 'pointer',
+                transition: theme.transitions.fast,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = theme.colors.accentHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = theme.colors.accent;
+              }}
+            >
+              Process
+            </button>
+          )}
+          {row.status === 'ready' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/nurse/review/${row._id}`);
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: theme.typography.sizes.tiny,
+                fontWeight: theme.typography.weights.medium,
+                fontFamily: theme.typography.fontFamily,
+                backgroundColor: theme.colors.warning,
+                color: theme.colors.surface,
+                border: 'none',
+                borderRadius: theme.radius.sm,
+                cursor: 'pointer',
+                transition: theme.transitions.fast,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = '0.85';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = '1';
+              }}
+            >
+              Review
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(`${api.defaults.baseURL}/reports/${row._id}/pdf`, '_blank');
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: theme.typography.sizes.tiny,
+              fontWeight: theme.typography.weights.medium,
+              fontFamily: theme.typography.fontFamily,
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.textPrimary,
+              border: `1px solid ${theme.colors.border}`,
+              borderRadius: theme.radius.sm,
+              cursor: 'pointer',
+              transition: theme.transitions.fast,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = theme.colors.borderHover;
+              e.currentTarget.style.backgroundColor = theme.colors.background;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = theme.colors.border;
+              e.currentTarget.style.backgroundColor = theme.colors.surface;
+            }}
+          >
+            Download
+          </button>
+        </div>
+      ),
     },
   ];
 
   return (
-    <Box>
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: theme.colors.background,
+        padding: theme.spacing.lg,
+        fontFamily: theme.typography.fontFamily,
+      }}
+    >
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: theme.spacing.xl,
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: theme.typography.sizes.heading,
+              fontWeight: theme.typography.weights.bold,
+              color: theme.colors.textPrimary,
+              margin: 0,
+              marginBottom: theme.spacing.xs,
+              lineHeight: theme.typography.lineHeights.tight,
+            }}
+          >
             Welcome back, {user?.name}!
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
+          </h1>
+          <p
+            style={{
+              fontSize: theme.typography.sizes.body,
+              fontWeight: theme.typography.weights.normal,
+              color: theme.colors.textSecondary,
+              margin: 0,
+              lineHeight: theme.typography.lineHeights.normal,
+            }}
+          >
             Here's your dashboard overview for today
-          </Typography>
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<UploadIcon />}
+          </p>
+        </div>
+        <CustomButton
+          variant="primary"
           onClick={() => navigate('/nurse/upload')}
-          size="large"
         >
           Upload New Report
-        </Button>
-      </Box>
+        </CustomButton>
+      </div>
 
       {/* Stats Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        {statCards.map((stat, index) => (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
-            <Card sx={{ height: '100%' }}>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 1 }}>
-                      {stat.title}
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-                      {stat.value}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: stat.color }}>
-                      {stat.trend}
-                    </Typography>
-                  </Box>
-                  <Avatar sx={{ bgcolor: `${stat.color}20`, color: stat.color, width: 56, height: 56 }}>
-                    {stat.icon}
-                  </Avatar>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gap: theme.spacing.md,
+          marginBottom: theme.spacing.xl,
+        }}
+      >
+        <StatCard
+          title="Total Reports"
+          value={stats.total}
+          icon="📊"
+          trend="+12%"
+          color={theme.colors.accent}
+        />
+        <StatCard
+          title="Ready for Review"
+          value={stats.ready}
+          icon="⏳"
+          trend={stats.ready > 0 ? `${stats.ready} pending` : 'All clear'}
+          color={theme.colors.warning}
+        />
+        <StatCard
+          title="Approved"
+          value={stats.approved}
+          icon="✓"
+          trend={`${Math.round((stats.approved / (stats.total || 1)) * 100)}% approval rate`}
+          color={theme.colors.success}
+        />
+        <StatCard
+          title="Flagged"
+          value={stats.flagged}
+          icon="⚠"
+          trend={stats.flagged > 0 ? 'Needs attention' : 'No issues'}
+          color={theme.colors.error}
+        />
+      </div>
 
-      {/* Quick Actions Alert */}
+      {/* Alert */}
       {stats.ready > 0 && (
-        <Alert
-          severity="info"
-          sx={{ mb: 3 }}
-          action={
-            <Button color="inherit" size="small" onClick={() => navigate('/nurse/review')}>
-              Review Now
-            </Button>
-          }
-        >
-          You have {stats.ready} report{stats.ready > 1 ? 's' : ''} ready for review
-        </Alert>
+        <div style={{ marginBottom: theme.spacing.xl }}>
+          <AlertBox
+            variant="info"
+            action={
+              <CustomButton
+                variant="secondary"
+                onClick={() => navigate('/nurse/review')}
+              >
+                Review Now
+              </CustomButton>
+            }
+          >
+            You have {stats.ready} report{stats.ready > 1 ? 's' : ''} ready for review
+          </AlertBox>
+        </div>
       )}
 
       {/* Recent Reports Table */}
-      <Paper sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+      <div
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderRadius: theme.radius.lg,
+          padding: theme.spacing.lg,
+          boxShadow: theme.shadows.md,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: theme.spacing.md,
+          }}
+        >
+          <h2
+            style={{
+              fontSize: theme.typography.sizes.subheading,
+              fontWeight: theme.typography.weights.semibold,
+              color: theme.colors.textPrimary,
+              margin: 0,
+            }}
+          >
             Recent Reports
-          </Typography>
-          <Button variant="text" onClick={() => navigate('/nurse/reports')}>
+          </h2>
+          <CustomButton
+            variant="secondary"
+            onClick={() => navigate('/nurse/reports')}
+          >
             View All
-          </Button>
-        </Box>
+          </CustomButton>
+        </div>
 
         {loading ? (
-          <LinearProgress />
+          <LinearProgress sx={{ borderRadius: '4px' }} />
         ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Flag</TableCell>
-                  <TableCell>Order ID</TableCell>
-                  <TableCell>Upload Date</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Lab</TableCell>
-                  <TableCell>Parameters</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {reports.slice(0, 5).map((report) => {
-                const statusIcon = getStatusIcon(report.status);
-                return (
-                  <TableRow key={report._id} hover>
-                    <TableCell>{getFlagIndicator(report)}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {report.orderId}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {new Date(report.createdAt).toLocaleDateString()}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={report.status}
-                        color={getStatusColor(report.status)}
-                        size="small"
-                        {...(statusIcon && { icon: statusIcon })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {report.extractedData?.labName || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {report.extractedData?.results?.length || 0}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        {report.status === 'uploaded' && (
-                          <Tooltip title="Process Report">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleProcess(report._id)}
-                              color="primary"
-                            >
-                              <ProcessIcon />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        {report.status === 'ready' && (
-                          <Tooltip title="Review Report">
-                            <IconButton
-                              size="small"
-                              onClick={() => navigate(`/nurse/review/${report._id}`)}
-                              color="warning"
-                            >
-                              <ViewIcon />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        <Tooltip title="Download PDF">
-                          <IconButton
-                            size="small"
-                            onClick={() => window.open(`${api.defaults.baseURL}/reports/${report._id}/pdf`)}
-                            color="default"
-                          >
-                            <DownloadIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <Table
+            columns={tableColumns}
+            data={reports.slice(0, 5)}
+            onRowClick={(report) => {
+              if (report.status === 'ready') {
+                navigate(`/nurse/review/${report._id}`);
+              }
+            }}
+            loading={loading}
+          />
         )}
-      </Paper>
-    </Box>
+      </div>
+    </div>
   );
 };
 

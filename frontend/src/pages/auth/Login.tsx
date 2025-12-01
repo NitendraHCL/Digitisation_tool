@@ -1,41 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Card,
-  CardContent,
-  TextField,
-  Button,
-  Typography,
-  Alert,
-  InputAdornment,
-  IconButton,
-  LinearProgress,
-  Container,
-  Paper,
-  useTheme,
-  Link,
-  Grid,
-} from '@mui/material';
-import {
-  Visibility,
-  VisibilityOff,
-  Email as EmailIcon,
-  Lock as LockIcon,
-  Science as LabIcon,
-} from '@mui/icons-material';
+import { LinearProgress } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSnackbar } from 'notistack';
+import { theme } from '../../styles/theme';
+import CustomInput from '../../components/ui/CustomInput';
+import CustomButton from '../../components/ui/CustomButton';
+import Logo from '../../components/ui/Logo';
 
 const Login: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { login } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -47,8 +26,6 @@ const Login: React.FC = () => {
     try {
       await login({ email, password });
       enqueueSnackbar('Login successful!', { variant: 'success' });
-
-      // Navigate based on role (will be handled by protected routes)
       navigate('/');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
@@ -65,15 +42,12 @@ const Login: React.FC = () => {
     };
 
     const creds = credentials[role];
-
-    // Update form fields for visual feedback
     setEmail(creds.email);
     setPassword(creds.password);
     setError('');
     setLoading(true);
 
     try {
-      // Pass credentials directly to avoid async state issues
       await login(creds);
       enqueueSnackbar('Login successful!', { variant: 'success' });
       navigate('/');
@@ -86,178 +60,249 @@ const Login: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={{
+    <div
+      style={{
         minHeight: '100vh',
-        background: `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.secondary.light} 100%)`,
+        backgroundColor: theme.colors.background,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        p: 2,
+        fontFamily: theme.typography.fontFamily,
+        padding: `${theme.spacing['3xl']} ${theme.spacing.md}`,
       }}
     >
-      <Container maxWidth="lg">
-        <Grid container spacing={4} alignItems="center">
-          {/* Left side - Branding */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Box sx={{ color: '#fff', textAlign: { xs: 'center', md: 'left' } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'center', md: 'flex-start' }, mb: 3 }}>
-                <LabIcon sx={{ fontSize: 64, mr: 2 }} />
-                <Box>
-                  <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                    Lab Digitizer
-                  </Typography>
-                  <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                    Medical Report Digitization System
-                  </Typography>
-                </Box>
-              </Box>
+      {/* Logo */}
+      <div style={{ marginBottom: theme.spacing.xl }}>
+        <Logo size="medium" centered />
+      </div>
 
-              <Typography variant="h5" sx={{ mb: 2, fontWeight: 500 }}>
-                Transform Lab Reports with AI
-              </Typography>
+      {/* Login Card */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '480px',
+          backgroundColor: theme.colors.surface,
+          borderRadius: theme.radius.lg,
+          padding: theme.spacing.xl,
+          boxShadow: theme.shadows.md,
+        }}
+      >
+        {/* Loading Bar */}
+        {loading && <LinearProgress sx={{ mb: 3, borderRadius: '4px' }} />}
 
-              <Typography variant="body1" sx={{ mb: 3, opacity: 0.9 }}>
-                Upload PDF lab reports and let AI extract and digitize the data automatically.
-                Review, edit, and approve reports with complete audit trails.
-              </Typography>
+        {/* Heading */}
+        <div style={{ marginBottom: theme.spacing.lg }}>
+          <h1
+            style={{
+              fontSize: theme.typography.sizes.heading,
+              fontWeight: theme.typography.weights.bold,
+              color: theme.colors.textPrimary,
+              margin: 0,
+              marginBottom: theme.spacing.xs,
+              lineHeight: theme.typography.lineHeights.tight,
+            }}
+          >
+            Welcome Back
+          </h1>
+          <p
+            style={{
+              fontSize: theme.typography.sizes.body,
+              fontWeight: theme.typography.weights.normal,
+              color: theme.colors.textSecondary,
+              margin: 0,
+              lineHeight: theme.typography.lineHeights.normal,
+            }}
+          >
+            Sign in to continue to your dashboard
+          </p>
+        </div>
 
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: { xs: 'center', md: 'flex-start' } }}>
-                <Paper sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff' }}>95%</Typography>
-                  <Typography variant="body2" sx={{ color: '#fff', opacity: 0.9 }}>Accuracy Rate</Typography>
-                </Paper>
-                <Paper sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff' }}>60s</Typography>
-                  <Typography variant="body2" sx={{ color: '#fff', opacity: 0.9 }}>Avg Processing</Typography>
-                </Paper>
-                <Paper sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff' }}>100%</Typography>
-                  <Typography variant="body2" sx={{ color: '#fff', opacity: 0.9 }}>Audit Trail</Typography>
-                </Paper>
-              </Box>
-            </Box>
-          </Grid>
+        {/* Error Message */}
+        {error && (
+          <div
+            style={{
+              padding: theme.spacing.sm,
+              backgroundColor: '#FEE2E2',
+              border: `1px solid ${theme.colors.error}`,
+              borderRadius: theme.radius.sm,
+              marginBottom: theme.spacing.md,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: theme.spacing.xs,
+              }}
+            >
+              <span style={{ color: theme.colors.error, fontSize: '18px' }}>⚠️</span>
+              <div>
+                <div
+                  style={{
+                    fontSize: theme.typography.sizes.small,
+                    color: theme.colors.error,
+                    fontWeight: theme.typography.weights.medium,
+                  }}
+                >
+                  {error}
+                </div>
+                <button
+                  onClick={() => setError('')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: theme.colors.error,
+                    fontSize: theme.typography.sizes.small,
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    padding: 0,
+                    marginTop: '4px',
+                    fontFamily: theme.typography.fontFamily,
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-          {/* Right side - Login Form */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card sx={{ maxWidth: 480, mx: 'auto', boxShadow: 5 }}>
-              <CardContent sx={{ p: 4 }}>
-                {loading && <LinearProgress sx={{ mb: 2 }} />}
+        {/* Form */}
+        <form onSubmit={handleSubmit}>
+          <CustomInput
+            label="Email Address"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            autoFocus
+            autoComplete="email"
+          />
 
-                <Typography variant="h4" sx={{ mb: 1, fontWeight: 600 }}>
-                  Welcome Back
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  Sign in to continue to your dashboard
-                </Typography>
+          <CustomInput
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password"
+            required
+            autoComplete="current-password"
+            showPasswordToggle
+          />
 
-                {error && (
-                  <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
-                    {error}
-                  </Alert>
-                )}
+          {/* Forgot Password Link */}
+          <div style={{ marginBottom: theme.spacing.lg, textAlign: 'right' }}>
+            <a
+              href="#"
+              style={{
+                fontSize: theme.typography.sizes.small,
+                color: theme.colors.accent,
+                textDecoration: 'none',
+                fontWeight: theme.typography.weights.medium,
+                transition: theme.transitions.fast,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = theme.colors.accentHover;
+                e.currentTarget.style.textDecoration = 'underline';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = theme.colors.accent;
+                e.currentTarget.style.textDecoration = 'none';
+              }}
+            >
+              Forgot password?
+            </a>
+          </div>
 
-                <Box component="form" onSubmit={handleSubmit}>
-                  <TextField
-                    fullWidth
-                    label="Email Address"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    margin="normal"
-                    required
-                    autoComplete="email"
-                    autoFocus
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <EmailIcon color="action" />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
+          {/* Sign In Button */}
+          <CustomButton
+            type="submit"
+            variant="primary"
+            fullWidth
+            disabled={loading || !email || !password}
+            loading={loading}
+          >
+            {loading ? 'Signing in...' : 'Sign In'}
+          </CustomButton>
+        </form>
 
-                  <TextField
-                    fullWidth
-                    label="Password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    margin="normal"
-                    required
-                    autoComplete="current-password"
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <LockIcon color="action" />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            onClick={() => setShowPassword(!showPassword)}
-                            edge="end"
-                            size="small"
-                          >
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
+        {/* Divider */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            margin: `${theme.spacing.lg} 0`,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: theme.colors.divider,
+            }}
+          />
+          <span
+            style={{
+              padding: `0 ${theme.spacing.sm}`,
+              fontSize: theme.typography.sizes.small,
+              color: theme.colors.textSecondary,
+            }}
+          >
+            Quick Demo Access
+          </span>
+          <div
+            style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: theme.colors.divider,
+            }}
+          />
+        </div>
 
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, mb: 3 }}>
-                    <Link href="#" variant="body2" sx={{ textDecoration: 'none' }}>
-                      Forgot password?
-                    </Link>
-                  </Box>
+        {/* Demo Buttons */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <CustomButton
+            variant="secondary"
+            onClick={() => handleDemoLogin('admin')}
+            disabled={loading}
+          >
+            Admin Demo
+          </CustomButton>
+          <CustomButton
+            variant="secondary"
+            onClick={() => handleDemoLogin('nurse')}
+            disabled={loading}
+          >
+            Nurse Demo
+          </CustomButton>
+        </div>
+      </div>
 
-                  <Button
-                    fullWidth
-                    type="submit"
-                    variant="contained"
-                    size="large"
-                    disabled={loading || !email || !password}
-                    sx={{ mb: 2 }}
-                  >
-                    {loading ? 'Signing in...' : 'Sign In'}
-                  </Button>
-
-                  <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'center' }}>
-                      Quick Demo Access
-                    </Typography>
-                    <Grid container spacing={1}>
-                      <Grid size={{ xs: 6 }}>
-                        <Button
-                          fullWidth
-                          variant="outlined"
-                          onClick={() => handleDemoLogin('admin')}
-                          disabled={loading}
-                        >
-                          Admin Demo
-                        </Button>
-                      </Grid>
-                      <Grid size={{ xs: 6 }}>
-                        <Button
-                          fullWidth
-                          variant="outlined"
-                          onClick={() => handleDemoLogin('nurse')}
-                          disabled={loading}
-                        >
-                          Nurse Demo
-                        </Button>
-                      </Grid>
-                    </Grid>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Container>
-    </Box>
+      {/* Footer */}
+      <div
+        style={{
+          marginTop: theme.spacing.xl,
+          textAlign: 'center',
+        }}
+      >
+        <p
+          style={{
+            fontSize: theme.typography.sizes.small,
+            color: theme.colors.textSecondary,
+            margin: 0,
+          }}
+        >
+          © 2025 Lab Digitizer. All rights reserved.
+        </p>
+      </div>
+    </div>
   );
 };
 

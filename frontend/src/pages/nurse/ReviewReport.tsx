@@ -38,6 +38,7 @@ import {
   InputAdornment,
   Grid,
 } from '@mui/material';
+import { theme as appTheme } from '../../styles/theme';
 import {
   Save as SaveIcon,
   Cancel as CancelIcon,
@@ -1229,7 +1230,12 @@ const ReviewReport: React.FC = () => {
   // Show success message with View JSON button if report is approved and not in repeat review mode
   if (report.status === 'approved' && !showRepeatReview && report.finalData) {
     return (
-      <Box sx={{ p: 4 }}>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: appTheme.colors.background,
+        fontFamily: appTheme.typography.fontFamily,
+        padding: `${appTheme.spacing.xl} ${appTheme.spacing['2xl']}`,
+      }}>
         {/* Success Message Card */}
         <Card sx={{ maxWidth: 800, mx: 'auto', mb: 3 }}>
           <CardContent sx={{ textAlign: 'center', py: 4 }}>
@@ -1286,24 +1292,39 @@ const ReviewReport: React.FC = () => {
             />
           </Box>
         )}
-      </Box>
+      </div>
     );
   }
 
   // Otherwise show the split-view for review/editing
   return (
-    <Box>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: appTheme.colors.background,
+      fontFamily: appTheme.typography.fontFamily,
+      padding: `${appTheme.spacing.xl} ${appTheme.spacing['2xl']}`,
+    }}>
       {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-          <Box>
-            <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+      <div style={{ marginBottom: appTheme.spacing.lg }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: appTheme.spacing.md }}>
+          <div>
+            <h1 style={{
+              fontSize: appTheme.typography.sizes.heading,
+              fontWeight: appTheme.typography.weights.semibold,
+              color: appTheme.colors.textPrimary,
+              margin: 0,
+              marginBottom: appTheme.spacing.xs,
+            }}>
               Review Lab Report
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
+            </h1>
+            <p style={{
+              fontSize: appTheme.typography.sizes.body,
+              color: appTheme.colors.textSecondary,
+              margin: 0,
+            }}>
               Review and approve the extracted data from the lab report
-            </Typography>
-          </Box>
+            </p>
+          </div>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Tooltip title="View Edit History">
               <IconButton onClick={() => setShowHistory(true)} color="primary">
@@ -1313,7 +1334,7 @@ const ReviewReport: React.FC = () => {
               </IconButton>
             </Tooltip>
           </Box>
-        </Box>
+        </div>
 
         {/* Repeat Review Alert */}
         {showRepeatReview && (
@@ -1346,7 +1367,7 @@ const ReviewReport: React.FC = () => {
             </Typography>
           </Alert>
         )}
-      </Box>
+      </div>
 
       {/* Split View: PDF Viewer + Extracted Data */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -1391,8 +1412,8 @@ const ReviewReport: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             height: '100%'
           }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
                 <ReportIcon sx={{ mr: 1, color: !report.orderId ? '#F59E0B' : '#4361EE', fontSize: 20 }} />
                 <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Order ID {!report.orderId && <span style={{ color: '#EF4444' }}>*</span>}
@@ -1498,8 +1519,8 @@ const ReviewReport: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             height: '100%'
           }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
                 <LabIcon sx={{ mr: 1, color: '#8B5CF6', fontSize: 20 }} />
                 <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Laboratory
@@ -1523,8 +1544,8 @@ const ReviewReport: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             height: '100%'
           }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <PersonIcon sx={{ mr: 1, color: '#06B6D4', fontSize: 20 }} />
                   <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -1552,8 +1573,8 @@ const ReviewReport: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             height: '100%'
           }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
                 <FlagIcon sx={{ mr: 1, color: getFlagColor(), fontSize: 20 }} />
                 <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Overall Status
@@ -1580,8 +1601,8 @@ const ReviewReport: React.FC = () => {
               boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               height: '100%'
             }}>
-              <CardContent sx={{ p: 2.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+              <CardContent sx={{ p: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
                   <HistoryIcon sx={{ mr: 1, color: report.auditSummary.accuracyPercentage >= 90 ? '#10B981' : report.auditSummary.accuracyPercentage >= 70 ? '#F59E0B' : '#EF4444', fontSize: 20 }} />
                   <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Accuracy
@@ -2522,7 +2543,7 @@ const ReviewReport: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-    </Box>
+    </div>
   );
 };
 
