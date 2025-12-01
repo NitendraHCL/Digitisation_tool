@@ -3,11 +3,22 @@ const LabConfig = require('../models/LabConfig');
 
 class GPTExtractorService {
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      timeout: 300000, // 300 seconds (5 minutes) timeout for gpt-5-nano
-      maxRetries: 2, // Retry failed requests twice
-    });
+    this.openai = null; // Lazy-load OpenAI client only when needed
+  }
+
+  // Lazy-load OpenAI client
+  getOpenAIClient() {
+    if (!this.openai) {
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY is required for GPT extraction. Please set it in your environment variables.');
+      }
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        timeout: 300000, // 300 seconds (5 minutes) timeout for gpt-5-nano
+        maxRetries: 2, // Retry failed requests twice
+      });
+    }
+    return this.openai;
   }
 
   async extractFromText(text, orderId) {
@@ -151,7 +162,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
       console.log('[GPT] 17. API call started at:', new Date(apiCallStartTime).toISOString());
 
       // Call GPT-4
-      const completion = await this.openai.chat.completions.create(apiConfig);
+      const completion = await this.getOpenAIClient().chat.completions.create(apiConfig);
 
       const apiCallEndTime = Date.now();
       const apiDuration = ((apiCallEndTime - apiCallStartTime) / 1000).toFixed(2);
@@ -358,7 +369,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
       const apiCallStartTime = Date.now();
 
       // Call GPT Vision with specified model
-      const completion = await this.openai.chat.completions.create({
+      const completion = await this.getOpenAIClient().chat.completions.create({
         model: modelName,
         messages: [
           {
@@ -505,7 +516,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
       console.log('[GPT PDF] 10. ========== UPLOADING PDF TO OPENAI ==========');
       const uploadStartTime = Date.now();
 
-      const file = await this.openai.files.create({
+      const file = await this.getOpenAIClient().files.create({
         file: fs.createReadStream(pdfPath),
         purpose: 'assistants'
       });
@@ -567,7 +578,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
       console.log('[GPT PDF] 15. ========== CALLING OPENAI API WITH PDF ==========');
       const apiCallStartTime = Date.now();
 
-      const completion = await this.openai.chat.completions.create({
+      const completion = await this.getOpenAIClient().chat.completions.create({
         model: 'gpt-5-nano',
         messages: [
           {
@@ -602,7 +613,7 @@ Extract ALL test parameters. Return ONLY valid JSON, no additional text.`;
       // Clean up: Delete the uploaded file from OpenAI
       console.log('[GPT PDF] 17. Cleaning up uploaded file...');
       try {
-        await this.openai.files.del(file.id);
+        await this.getOpenAIClient().files.del(file.id);
         console.log('[GPT PDF] 18. ✓ File deleted from OpenAI');
       } catch (cleanupError) {
         console.warn('[GPT PDF] 18. Warning: Failed to delete file from OpenAI:', cleanupError.message);
@@ -779,7 +790,7 @@ Extract ALL test parameters from THIS PAGE. Return ONLY valid JSON, no additiona
           console.log(`[GPT PAGEWISE] 7.${pageNumber}.3. Calling OpenAI API for page ${pageNumber}...`);
           const apiCallStartTime = Date.now();
 
-          const completion = await this.openai.chat.completions.create({
+          const completion = await this.getOpenAIClient().chat.completions.create({
           model: modelName,
           messages: [
             {

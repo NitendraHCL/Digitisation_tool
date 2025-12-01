@@ -4,9 +4,20 @@ const pLimit = require('p-limit');
 
 class GPT4oExtractorService {
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
+    this.openai = null; // Lazy-load OpenAI client only when needed
+  }
+
+  // Lazy-load OpenAI client
+  getOpenAIClient() {
+    if (!this.openai) {
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY is required for GPT-4o extraction. Please set it in your environment variables.');
+      }
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY
+      });
+    }
+    return this.openai;
   }
 
   async extractFromImages(images, orderId) {
@@ -96,7 +107,7 @@ The pages in this lab report are provided in their original sequential order. Yo
       console.log('[GPT-4o VISION] 11a. Model config: temperature=0 (deterministic), max_tokens=4096');
 
       // Call GPT-4o with vision support and deterministic configuration
-      const response = await this.openai.chat.completions.create({
+      const response = await this.getOpenAIClient().chat.completions.create({
         model: 'gpt-4o',
         messages: [
           {
@@ -397,7 +408,7 @@ The pages in this lab report are provided in their original sequential order. Yo
             console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.3. Calling GPT-4o API for page ${pageNumber}...`);
             const apiCallStartTime = Date.now();
 
-            const response = await this.openai.chat.completions.create({
+            const response = await this.getOpenAIClient().chat.completions.create({
               model: modelName,
               messages: [
                 {
