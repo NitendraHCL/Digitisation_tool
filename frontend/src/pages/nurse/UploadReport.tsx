@@ -34,41 +34,6 @@ const UploadReport: React.FC = () => {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [batchStartTime, setBatchStartTime] = useState<number | null>(null);
   const [currentElapsedTime, setCurrentElapsedTime] = useState<number>(0);
-  const [configDefaults, setConfigDefaults] = useState<{ model: string; extractionMethod: string }>({
-    model: 'Gemini 2.5 Flash',
-    extractionMethod: 'Image-based',
-  });
-
-  React.useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const response = await api.get('/lab-config');
-        if (response.data.success) {
-          const config = response.data.data;
-          const modelMap: Record<string, string> = {
-            'gemini-2.5-flash': 'Gemini 2.5 Flash',
-            'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
-            'gemini-2.0-flash': 'Gemini 2.0 Flash',
-            'gpt-4o': 'GPT-4o',
-            'gpt-4.1': 'GPT-4.1',
-          };
-          const methodMap: Record<string, string> = {
-            hybrid: 'Hybrid',
-            image: 'Image-based',
-            text: 'Text-based',
-            pdf: 'Raw PDF',
-          };
-          setConfigDefaults({
-            model: modelMap[config.systemConfig?.defaultModel] || 'Gemini 2.5 Flash',
-            extractionMethod: methodMap[config.systemConfig?.defaultExtractionMethod] || 'Hybrid',
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch config:', error);
-      }
-    };
-    fetchConfig();
-  }, []);
 
   React.useEffect(() => {
     if (batchStartTime && processing) {
@@ -435,8 +400,7 @@ const UploadReport: React.FC = () => {
                 <div>
                   <strong>Processing Configuration:</strong>
                   <br />
-                  Reports will be automatically processed using <strong>{configDefaults.model}</strong> with{' '}
-                  <strong>{configDefaults.extractionMethod}</strong> extraction method.
+                  Reports will be processed as per the configuration set by your admin.
                 </div>
               </AlertBox>
 

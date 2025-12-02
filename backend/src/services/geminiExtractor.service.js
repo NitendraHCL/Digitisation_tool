@@ -5,13 +5,20 @@ const pLimit = require('p-limit');
 // Helper function to normalize gender values to schema-compatible values
 // Converts "M", "m", "Male", "MALE" → "male"
 // Converts "F", "f", "Female", "FEMALE" → "female"
-// Anything else → "other"
+// Returns null for unavailable/unrecognized values (don't block processing)
 function normalizeGender(gender) {
   if (!gender) return null;
   const g = gender.trim().toLowerCase();
+
+  // Check for "not available" patterns - return null instead of blocking
+  const notAvailablePatterns = ['n/a', 'na', 'not available', 'not specified', '-', '--', 'unknown', 'nil', 'none', ''];
+  if (notAvailablePatterns.includes(g)) return null;
+
   if (g === 'm' || g === 'male') return 'male';
   if (g === 'f' || g === 'female') return 'female';
-  return 'other';
+
+  // For any other unrecognized value, return null to avoid blocking processing
+  return null;
 }
 
 class GeminiExtractorService {

@@ -45,14 +45,19 @@ const ValidationFlag: React.FC<ValidationFlagProps> = ({ flag, children, fieldNa
         <Typography variant="body2" sx={{ mb: 1 }}>
           {flag.message}
         </Typography>
-        {flag.expected && (
-          <Typography variant="caption" display="block">
-            <strong>Expected:</strong> {expected}
-          </Typography>
+        {/* Hide Expected/Found for PARAMETER_NOT_FOUND - message is self-explanatory */}
+        {flag.flagType !== 'PARAMETER_NOT_FOUND' && (
+          <>
+            {flag.expected && (
+              <Typography variant="caption" display="block">
+                <strong>Expected:</strong> {expected}
+              </Typography>
+            )}
+            <Typography variant="caption" display="block">
+              <strong>Found:</strong> {flag.actual}
+            </Typography>
+          </>
         )}
-        <Typography variant="caption" display="block">
-          <strong>Found:</strong> {flag.actual}
-        </Typography>
       </Box>
     );
   };
