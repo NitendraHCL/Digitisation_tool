@@ -1325,14 +1325,26 @@ const ReviewReport: React.FC = () => {
               Review and approve the extracted data from the lab report
             </p>
           </div>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
             <Tooltip title="View Edit History">
-              <IconButton onClick={() => setShowHistory(true)} color="primary">
+              <IconButton onClick={() => setShowHistory(true)} color="primary" size="small">
                 <Badge badgeContent={report.editHistory?.length || 0} color="error">
-                  <HistoryIcon />
+                  <HistoryIcon fontSize="small" />
                 </Badge>
               </IconButton>
             </Tooltip>
+            <Chip
+              label={report.status.toUpperCase()}
+              size="small"
+              sx={{
+                height: 20,
+                fontSize: '10px',
+                fontWeight: 600,
+                bgcolor: report.status === 'ready' ? '#FEF3C7' : report.status === 'approved' ? '#D1FAE5' : report.status === 'rejected' ? '#FEE2E2' : '#F3F4F6',
+                color: report.status === 'ready' ? '#B45309' : report.status === 'approved' ? '#065F46' : report.status === 'rejected' ? '#991B1B' : '#6B7280',
+                border: `1px solid ${report.status === 'ready' ? '#FCD34D' : report.status === 'approved' ? '#6EE7B7' : report.status === 'rejected' ? '#FECACA' : '#D1D5DB'}`
+              }}
+            />
           </Box>
         </div>
 
@@ -1403,24 +1415,37 @@ const ReviewReport: React.FC = () => {
         {/* Right Side: Extracted Data */}
         <Grid size={{ xs: 12, lg: 7 }}>
           {/* Report Info Cards */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, md: 3 }}>
+          <Grid container spacing={1.5} sx={{ mb: 2, alignItems: 'stretch' }}>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <Tooltip
+            title={report.orderId ? `Click to edit` : 'Required before approval'}
+            placement="bottom"
+            arrow
+          >
           <Card sx={{
             bgcolor: !report.orderId ? '#FEF3C7' : 'white',
-            border: !report.orderId ? '2px solid #F59E0B' : '1px solid #E5E7EB',
-            borderRadius: 2,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            height: '100%'
-          }}>
-            <CardContent sx={{ p: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
-                <ReportIcon sx={{ mr: 1, color: !report.orderId ? '#F59E0B' : '#4361EE', fontSize: 20 }} />
-                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Order ID {!report.orderId && <span style={{ color: '#EF4444' }}>*</span>}
-                </Typography>
-              </Box>
+            border: !report.orderId ? '1px solid #F59E0B' : '1px solid #E5E7EB',
+            borderRadius: 1.5,
+            boxShadow: 'none',
+            height: '100%',
+            minHeight: 48,
+            cursor: report.orderId ? 'pointer' : 'default',
+            '&:hover': report.orderId ? { bgcolor: '#F9FAFB' } : {}
+          }}
+          onClick={() => {
+            if (report.orderId && !editingOrderId) {
+              setTempOrderId(report.orderId || '');
+              setEditingOrderId(true);
+            }
+          }}
+          >
+            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+              <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                <ReportIcon sx={{ mr: 0.5, color: !report.orderId ? '#F59E0B' : '#4361EE', fontSize: 14 }} />
+                Order ID {!report.orderId && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
+              </Typography>
               {!report.orderId || editingOrderId ? (
-                <Box>
+                <Box onClick={(e) => e.stopPropagation()}>
                   <TextField
                     size="small"
                     fullWidth
@@ -1430,165 +1455,96 @@ const ReviewReport: React.FC = () => {
                     onFocus={() => setEditingOrderId(true)}
                     autoFocus={!report.orderId}
                     disabled={savingOrderId}
-                    sx={{ mb: 1 }}
+                    InputProps={{ sx: { fontSize: '12px', height: 28 } }}
                   />
-                  {editingOrderId && (
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        onClick={handleSaveOrderId}
-                        disabled={savingOrderId || !tempOrderId.trim()}
-                        fullWidth
-                      >
-                        {savingOrderId ? 'Saving...' : 'Save'}
-                      </Button>
-                      {report.orderId && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => {
-                            setEditingOrderId(false);
-                            setTempOrderId('');
-                          }}
-                          disabled={savingOrderId}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </Box>
-                  )}
-                  {!report.orderId && (
-                    <Alert severity="warning" sx={{ mt: 1, py: 0 }}>
-                      <Typography variant="caption">
-                        Required before approval
-                      </Typography>
-                    </Alert>
-                  )}
-                </Box>
-              ) : (
-                <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827', wordBreak: 'break-all' }}>
-                    {report.orderId}
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                    <Chip
-                      label={report.status}
-                      size="small"
-                      sx={{
-                        height: 20,
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        bgcolor: report.status === 'ready' ? '#FEF3C7' : report.status === 'approved' ? '#D1FAE5' : '#F3F4F6',
-                        color: report.status === 'ready' ? '#B45309' : report.status === 'approved' ? '#065F46' : '#6B7280',
-                        border: `1px solid ${report.status === 'ready' ? '#FCD34D' : report.status === 'approved' ? '#6EE7B7' : '#D1D5DB'}`
-                      }}
-                    />
-                    <Button
-                      size="small"
-                      startIcon={<EditIcon sx={{ fontSize: 14 }} />}
-                      onClick={() => {
-                        setTempOrderId(report.orderId || '');
-                        setEditingOrderId(true);
-                      }}
-                      sx={{
-                        textTransform: 'none',
-                        color: '#6B7280',
-                        fontSize: '11px',
-                        fontWeight: 500,
-                        px: 1,
-                        py: 0.25,
-                        minHeight: 0,
-                        '&:hover': { bgcolor: '#F3F4F6', color: '#4361EE' }
-                      }}
-                    >
-                      Edit
+                  <Box sx={{ display: 'flex', gap: 0.5, mt: 0.75 }}>
+                    <Button size="small" variant="contained" onClick={handleSaveOrderId} disabled={savingOrderId || !tempOrderId.trim()} sx={{ fontSize: '11px', py: 0.25, px: 1.5, textTransform: 'none' }}>
+                      {savingOrderId ? 'Saving...' : 'Save'}
                     </Button>
+                    {report.orderId && (
+                      <Button size="small" variant="outlined" onClick={() => { setEditingOrderId(false); setTempOrderId(''); }} disabled={savingOrderId} sx={{ fontSize: '11px', py: 0.25, px: 1, textTransform: 'none' }}>
+                        Cancel
+                      </Button>
+                    )}
                   </Box>
                 </Box>
+              ) : (
+                <Typography sx={{ fontWeight: 500, color: '#111827', wordBreak: 'break-all', fontSize: '13px', lineHeight: 1.3 }}>
+                  {report.orderId}
+                </Typography>
               )}
             </CardContent>
           </Card>
+          </Tooltip>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 6, md: 2.5 }}>
+          <Tooltip title={report.extractedData?.labAddress || 'No address'} placement="bottom" arrow>
           <Card sx={{
             bgcolor: 'white',
             border: '1px solid #E5E7EB',
-            borderRadius: 2,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            height: '100%'
+            borderRadius: 1.5,
+            boxShadow: 'none',
+            height: '100%',
+            minHeight: 48
           }}>
-            <CardContent sx={{ p: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
-                <LabIcon sx={{ mr: 1, color: '#8B5CF6', fontSize: 20 }} />
-                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Laboratory
-                </Typography>
-              </Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#111827', fontSize: '16px', mb: 0.5 }}>
+            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+              <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                <LabIcon sx={{ mr: 0.5, color: '#8B5CF6', fontSize: 14 }} />
+                Laboratory
+              </Typography>
+              <Typography sx={{ fontWeight: 500, color: '#111827', fontSize: '13px', lineHeight: 1.3 }}>
                 {report.extractedData?.labName || 'Unknown Lab'}
               </Typography>
-              <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
-                {report.extractedData?.labAddress || 'No address'}
-              </Typography>
             </CardContent>
           </Card>
+          </Tooltip>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 6, md: 4 }}>
+          <Tooltip title={report.extractedData?.patientGender || 'Details not available'} placement="bottom" arrow>
           <Card sx={{
             bgcolor: 'white',
             border: '1px solid #E5E7EB',
-            borderRadius: 2,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            height: '100%'
+            borderRadius: 1.5,
+            boxShadow: 'none',
+            height: '100%',
+            minHeight: 48
           }}>
-            <CardContent sx={{ p: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PersonIcon sx={{ mr: 1, color: '#06B6D4', fontSize: 20 }} />
-                  <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Patient
-                  </Typography>
-                </Box>
-              </Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#111827', fontSize: '16px', mb: 0.5 }}>
+            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+              <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                <PersonIcon sx={{ mr: 0.5, color: '#06B6D4', fontSize: 14 }} />
+                Patient
+              </Typography>
+              <Typography sx={{ fontWeight: 500, color: '#111827', fontSize: '13px', lineHeight: 1.3 }}>
                 {report.extractedData?.patientName || 'Not specified'}
               </Typography>
-              <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
-                {report.extractedData?.patientGender
-                  ? report.extractedData.patientGender
-                  : 'Details not available'}
-              </Typography>
             </CardContent>
           </Card>
+          </Tooltip>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 6, md: 2.5 }}>
+          <Tooltip title={`${activeParams.length} parameters${excludedParams.length > 0 ? ` (${excludedParams.length} excluded)` : ''}`} placement="bottom" arrow>
           <Card sx={{
             bgcolor: 'white',
             border: '1px solid #E5E7EB',
-            borderRadius: 2,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            height: '100%'
+            borderRadius: 1.5,
+            boxShadow: 'none',
+            height: '100%',
+            minHeight: 48
           }}>
-            <CardContent sx={{ p: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
-                <FlagIcon sx={{ mr: 1, color: getFlagColor(), fontSize: 20 }} />
-                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Overall Status
-                </Typography>
-              </Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: getFlagColor(), fontSize: '16px', mb: 0.5 }}>
-                {report.uiIndicators?.label || 'Normal'}
+            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+              <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5, display: 'flex', alignItems: 'center' }}>
+                <FlagIcon sx={{ mr: 0.5, color: getFlagColor(), fontSize: 14 }} />
+                Result
               </Typography>
-              <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
-                {activeParams.length} parameters
-                {excludedParams.length > 0 && ` (${excludedParams.length} excluded)`}
+              <Typography sx={{ fontWeight: 500, color: getFlagColor(), fontSize: '13px', lineHeight: 1.3 }}>
+                {report.uiIndicators?.label || 'Normal'}
               </Typography>
             </CardContent>
           </Card>
+          </Tooltip>
         </Grid>
 
         {/* Audit Summary Card - Only show for approved/rejected reports */}
