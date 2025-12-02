@@ -63,6 +63,7 @@ const AllReportsList: React.FC = () => {
     ready: 0,
     approved: 0,
     rejected: 0,
+    error: 0,
   });
 
   useEffect(() => {
@@ -108,6 +109,7 @@ const AllReportsList: React.FC = () => {
         ready: reportsData.filter((r: Report) => r.status === 'ready').length,
         approved: reportsData.filter((r: Report) => r.status === 'approved').length,
         rejected: reportsData.filter((r: Report) => r.status === 'rejected').length,
+        error: reportsData.filter((r: Report) => r.status === 'error').length,
       });
     } catch (error) {
       enqueueSnackbar('Failed to fetch reports', { variant: 'error' });
@@ -150,6 +152,7 @@ const AllReportsList: React.FC = () => {
         ready: updatedReports.filter((r: Report) => r.status === 'ready').length,
         approved: updatedReports.filter((r: Report) => r.status === 'approved').length,
         rejected: updatedReports.filter((r: Report) => r.status === 'rejected').length,
+        error: updatedReports.filter((r: Report) => r.status === 'error').length,
       });
 
       // Delayed refetch to ensure DB consistency
@@ -416,6 +419,7 @@ const AllReportsList: React.FC = () => {
             <Tab label="Pending Review" value="ready" />
             <Tab label="Approved" value="approved" />
             <Tab label="Rejected" value="rejected" />
+            <Tab label="Error" value="error" />
           </Tabs>
 
           <Stack direction="row" spacing={2} alignItems="center">

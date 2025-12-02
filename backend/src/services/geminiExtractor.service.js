@@ -2,6 +2,18 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const LabConfig = require('../models/LabConfig');
 const pLimit = require('p-limit');
 
+// Helper function to normalize gender values to schema-compatible values
+// Converts "M", "m", "Male", "MALE" → "male"
+// Converts "F", "f", "Female", "FEMALE" → "female"
+// Anything else → "other"
+function normalizeGender(gender) {
+  if (!gender) return null;
+  const g = gender.trim().toLowerCase();
+  if (g === 'm' || g === 'male') return 'male';
+  if (g === 'f' || g === 'female') return 'female';
+  return 'other';
+}
+
 class GeminiExtractorService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -156,8 +168,9 @@ ${text}`;
       }
 
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
-        patientGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
-        console.log('[GEMINI] 18c. Patient gender extracted:', patientGender);
+        const rawGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        patientGender = normalizeGender(rawGender);
+        console.log('[GEMINI] 18c. Patient gender extracted:', rawGender, '→ normalized:', patientGender);
         allLines.shift();
       }
 
@@ -469,8 +482,9 @@ The pages in this lab report are provided in their original sequential order. Yo
       }
 
       if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
-        patientGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
-        console.log('[GEMINI VISION] 18c. Patient gender extracted:', patientGender);
+        const rawGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+        patientGender = normalizeGender(rawGender);
+        console.log('[GEMINI VISION] 18c. Patient gender extracted:', rawGender, '→ normalized:', patientGender);
         allLines.shift();
       }
 
@@ -787,8 +801,9 @@ The pages in this lab report are provided in their original sequential order. Yo
 
             // Check for patient gender (only expected on first page)
             if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
-              patientGenderFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim().toLowerCase();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d2. Patient gender: ${patientGenderFromPage}`);
+              const rawGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
+              patientGenderFromPage = normalizeGender(rawGender);
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d2. Patient gender: ${rawGender} → normalized: ${patientGenderFromPage}`);
               allLines.shift();
             }
 

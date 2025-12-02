@@ -63,7 +63,9 @@ const getDashboardStats = async (req, res) => {
       previousProcessingTimes,
       labDistribution,
       currentPeriodUsers,
-      previousPeriodUsers
+      previousPeriodUsers,
+      approvedWithoutEdits,
+      approvedWithEdits
     ] = await Promise.all([
       // Total reports (all time)
       Report.countDocuments(),
@@ -151,6 +153,21 @@ const getDashboardStats = async (req, res) => {
       // Active users in previous period
       User.countDocuments({
         createdAt: { $gte: previousStart, $lt: previousEnd }
+      }),
+
+      // Approved reports without edits (no nurse corrections) - for accuracy calculation
+      Report.countDocuments({
+        status: 'approved',
+        $or: [
+          { editHistory: { $exists: false } },
+          { editHistory: { $size: 0 } }
+        ]
+      }),
+
+      // Approved reports with edits (nurse made corrections) - for accuracy calculation
+      Report.countDocuments({
+        status: 'approved',
+        editHistory: { $exists: true, $not: { $size: 0 } }
       })
     ]);
 
@@ -166,9 +183,12 @@ const getDashboardStats = async (req, res) => {
       userMap[item._id] = item.count;
     });
 
-    // Calculate percentages
-    const approvalRate = totalReports > 0
-      ? Math.round((statusMap.approved || 0) / totalReports * 100)
+    // Calculate Accuracy Rate using new formula:
+    // Accuracy Rate = (Approved without edits) / (Approved without edits + Approved with edits + Rejected)
+    // This measures how accurately the AI extracted data without requiring nurse corrections
+    const denominatorForAccuracy = approvedWithoutEdits + approvedWithEdits + (statusMap.rejected || 0);
+    const approvalRate = denominatorForAccuracy > 0
+      ? Math.round(approvedWithoutEdits / denominatorForAccuracy * 100)
       : 0;
 
     const flaggedRate = totalReports > 0

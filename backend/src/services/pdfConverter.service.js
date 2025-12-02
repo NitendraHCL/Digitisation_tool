@@ -1,6 +1,7 @@
 const { fromPath } = require('pdf2pic');
 const path = require('path');
 const fs = require('fs').promises;
+const pdfParse = require('pdf-parse');
 
 class PDFConverterService {
   constructor() {
@@ -49,9 +50,14 @@ class PDFConverterService {
       const converter = fromPath(pdfPath, converterOptions);
       console.log('[PDF CONVERTER] 3. Converter initialized in', Date.now() - initStartTime, 'ms');
 
-      // Get PDF info to know how many pages
-      // We'll convert all pages - limit can be configured via env if needed
-      const maxPages = parseInt(process.env.MAX_PDF_PAGES) || 100; // Default to 100 pages max, configurable
+      // Get actual page count from PDF before conversion (PERF: avoids trying non-existent pages)
+      const pdfBuffer = await fs.readFile(pdfPath);
+      const pdfData = await pdfParse(pdfBuffer);
+      const actualPageCount = pdfData.numpages || 1;
+      const maxPagesLimit = parseInt(process.env.MAX_PDF_PAGES) || 100;
+      const maxPages = Math.min(actualPageCount, maxPagesLimit);
+
+      console.log('[PDF CONVERTER] 3a. PDF has', actualPageCount, 'pages, converting', maxPages, 'pages');
       const pageTimings = [];
       let totalConversionTime = 0;
       let totalFileReadTime = 0;

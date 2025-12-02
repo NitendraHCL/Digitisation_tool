@@ -21,8 +21,8 @@ module.exports = function(app) {
         "style-src 'self' 'unsafe-inline'", // Material-UI requires unsafe-inline
         "img-src 'self' data: https:",
         "font-src 'self' data:",
-        "connect-src 'self' http://localhost:5001 ws://localhost:3000", // WebSocket for hot reload
-        "frame-src 'self' http://localhost:5001", // Allow iframes to load PDFs from backend
+        "connect-src 'self' http://localhost:5007 ws://localhost:3000", // WebSocket for hot reload
+        "frame-src 'self' http://localhost:5007", // Allow iframes to load PDFs from backend
         "frame-ancestors 'self'",
         "form-action 'self'",
         "base-uri 'self'",

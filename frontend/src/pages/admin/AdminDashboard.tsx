@@ -74,6 +74,7 @@ interface DashboardStats {
     ready: number;
     approved: number;
     rejected: number;
+    error: number;
   };
   recentActivity: {
     date: string;
@@ -150,6 +151,7 @@ const AdminDashboard: React.FC = () => {
           ready: statsData.status.ready,
           approved: statsData.status.approved,
           rejected: statsData.status.rejected,
+          error: statsData.status.error,
         },
         recentActivity: metricsData.dailyReports.map((day: any) => ({
           date: format(new Date(day.date), 'MMM dd'),
@@ -253,18 +255,34 @@ const AdminDashboard: React.FC = () => {
     },
   ];
 
-  const pieData = stats ? Object.entries(stats.reportsByStatus).map(([key, value]) => ({
-    name: key.charAt(0).toUpperCase() + key.slice(1),
-    value,
-  })) : [];
+  // Map status keys to user-friendly labels
+  const statusLabels: Record<string, string> = {
+    processing: 'Processing',
+    ready: 'Ready for Review',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    error: 'Error',
+  };
 
-  const pieColors = [
-    theme.palette.grey[400],
-    theme.palette.info.main,
-    theme.palette.warning.main,
-    theme.palette.success.main,
-    theme.palette.error.main,
-  ];
+  // Map status keys to colors
+  const statusColors: Record<string, string> = {
+    processing: theme.palette.info.main,
+    ready: theme.palette.warning.main,
+    approved: theme.palette.success.main,
+    rejected: theme.palette.error.main,
+    error: theme.palette.grey[600],
+  };
+
+  // Filter out 'uploaded' status and map to pie data with labels
+  const pieData = stats ? Object.entries(stats.reportsByStatus)
+    .filter(([key]) => key !== 'uploaded') // Exclude 'uploaded' status
+    .map(([key, value]) => ({
+      name: statusLabels[key] || key.charAt(0).toUpperCase() + key.slice(1),
+      value,
+      key, // Keep original key for color mapping
+    })) : [];
+
+  const pieColors = pieData.map(item => statusColors[item.key] || theme.palette.grey[400]);
 
   return (
     <Box>
@@ -341,7 +359,7 @@ const AdminDashboard: React.FC = () => {
 
       {/* Charts Row 1 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, md: 8 }}>
+        <Grid size={{ xs: 12, md: 7 }}>
           <Paper sx={{ p: 3, height: 400 }}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
               Report Activity Trend
@@ -381,7 +399,7 @@ const AdminDashboard: React.FC = () => {
             </ResponsiveContainer>
           </Paper>
         </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 5 }}>
           <Paper sx={{ p: 3, height: 400 }}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
               Report Status Distribution
