@@ -5,6 +5,7 @@ const thresholdChecker = require('../services/thresholdChecker.service');
 const LabConfig = require('../models/LabConfig');
 // const Order = require('../models/Order');  // No longer needed - using observation collection
 const AuditLog = require('../models/AuditLog');
+const externalDb = require('../services/externalDb.service');
 // const orderValidationService = require('../services/orderValidation.service');  // No longer needed - using observationData from Report
 
 // Helper function to calculate audit summary
@@ -604,13 +605,9 @@ const updateOrderId = async (req, res) => {
       });
     }
 
-    // Step 2: Query observation collection to validate OrderID exists
-    console.log('[REVIEW CONTROLLER] Querying observation collection for orderId:', trimmedOrderId);
-    const db = mongoose.connection.db;
-    const obs = await db.collection('observation').findOne(
-      { orderId: trimmedOrderId },
-      { sort: { g_creation_time: 1 } }
-    );
+    // Step 2: Query external MongoDB (dev_kxhims.observation) to validate OrderID exists
+    console.log('[REVIEW CONTROLLER] Querying external observation collection for orderId:', trimmedOrderId);
+    const obs = await externalDb.getObservationByOrderId(trimmedOrderId);
 
     if (!obs) {
       console.log('[REVIEW CONTROLLER] No Observation found for orderId:', trimmedOrderId);
@@ -1513,7 +1510,7 @@ const publishReport = async (req, res) => {
         outSourceCentre_id: obs.outSourceCentre_id || "",
         admittingDoctor: obs.admittingDoctor || "",
         cug_code: obs.cug_code || "",
-        package_service_code: obs.outsource_service_code || ""
+        package_service_code: obs.package_service_code || ""
       };
 
       // fields - fixed + blank + null values (same for all rows)
@@ -1663,17 +1660,23 @@ const publishReport = async (req, res) => {
       allResults.push(finalRow);
     }
 
-    // 4. Insert into digitization_observation
-    const db = mongoose.connection.db;
-    const collection = db.collection('digitization_observation');
-    const insertResult = await collection.insertMany(allResults);
+    // 4. Insert into external observation_non_digitized collection
+    console.log('[PUBLISH] Inserting', allResults.length, 'results to external observation_non_digitized');
+    const insertResult = await externalDb.insertToNonDigitized(allResults);
 
-    console.log(`[REVIEW CONTROLLER] Published ${insertResult.insertedCount} rows to digitization_observation`);
+    console.log(`[REVIEW CONTROLLER] Published ${insertResult.insertedCount} rows to external observation_non_digitized`);
+
+    // 5. Update report status to 'published'
+    report.status = 'published';
+    report.publishedAt = new Date();
+    await report.save();
+    console.log(`[REVIEW CONTROLLER] Report status updated to 'published'`);
 
     return res.status(200).json({
       success: true,
       message: `Successfully published ${insertResult.insertedCount} test results`,
-      insertedCount: insertResult.insertedCount
+      insertedCount: insertResult.insertedCount,
+      status: 'published'
     });
   } catch (error) {
     console.error('[REVIEW CONTROLLER] Publish error:', error);

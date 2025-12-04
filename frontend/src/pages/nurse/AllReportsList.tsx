@@ -63,6 +63,7 @@ const AllReportsList: React.FC = () => {
     ready: 0,
     approved: 0,
     rejected: 0,
+    published: 0,
     error: 0,
   });
 
@@ -109,6 +110,7 @@ const AllReportsList: React.FC = () => {
         ready: reportsData.filter((r: Report) => r.status === 'ready').length,
         approved: reportsData.filter((r: Report) => r.status === 'approved').length,
         rejected: reportsData.filter((r: Report) => r.status === 'rejected').length,
+        published: reportsData.filter((r: Report) => r.status === 'published').length,
         error: reportsData.filter((r: Report) => r.status === 'error').length,
       });
     } catch (error) {
@@ -152,6 +154,7 @@ const AllReportsList: React.FC = () => {
         ready: updatedReports.filter((r: Report) => r.status === 'ready').length,
         approved: updatedReports.filter((r: Report) => r.status === 'approved').length,
         rejected: updatedReports.filter((r: Report) => r.status === 'rejected').length,
+        published: updatedReports.filter((r: Report) => r.status === 'published').length,
         error: updatedReports.filter((r: Report) => r.status === 'error').length,
       });
 
@@ -174,6 +177,7 @@ const AllReportsList: React.FC = () => {
       ready: 'warning',
       approved: 'success',
       rejected: 'error',
+      published: 'success',
       error: 'error',
     };
     return colors[status] || 'default';
@@ -186,6 +190,7 @@ const AllReportsList: React.FC = () => {
       ready: 'Pending Review',
       approved: 'Approved',
       rejected: 'Rejected',
+      published: 'Published',
       error: 'Error',
     };
     return labels[status] || status;
@@ -418,6 +423,7 @@ const AllReportsList: React.FC = () => {
             <Tab label="Processing" value="processing" />
             <Tab label="Pending Review" value="ready" />
             <Tab label="Approved" value="approved" />
+            <Tab label="Published" value="published" />
             <Tab label="Rejected" value="rejected" />
             <Tab label="Error" value="error" />
           </Tabs>
@@ -600,8 +606,8 @@ const AllReportsList: React.FC = () => {
                               <DownloadIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          {/* Only show delete button if report is not approved AND (user is admin OR owns the report) */}
-                          {report.status !== 'approved' && (isAdmin || report.uploadedBy.id === user?.id) && (
+                          {/* Only show delete button if report is not approved/published AND (user is admin OR owns the report) */}
+                          {report.status !== 'approved' && report.status !== 'published' && (isAdmin || report.uploadedBy.id === user?.id) && (
                             <Tooltip title="Delete Report">
                               <IconButton
                                 size="small"

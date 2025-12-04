@@ -46,7 +46,7 @@ const reportSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['uploaded', 'processing', 'ready', 'approved', 'rejected', 'error'],
+    enum: ['uploaded', 'processing', 'ready', 'approved', 'rejected', 'error', 'published'],
     default: 'uploaded'
   },
   processingError: {

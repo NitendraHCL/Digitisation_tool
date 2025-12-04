@@ -200,6 +200,7 @@ const ReviewReport: React.FC = () => {
   const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
 
   // Timer helper functions
   const pauseTimer = () => {
@@ -793,11 +794,14 @@ const ReviewReport: React.FC = () => {
     if (!id) return;
 
     setIsPublishing(true);
+    setShowPublishDialog(false);
     try {
       const response = await api.post(`/review/${id}/publish`);
       if (response.data.success) {
         setIsPublished(true);
         enqueueSnackbar(`Published ${response.data.insertedCount} test results successfully`, { variant: 'success' });
+        // Refresh the report to get updated status
+        await fetchReport();
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to publish report';
@@ -1227,8 +1231,8 @@ const ReviewReport: React.FC = () => {
   console.log('[REVIEW] 22. Has extractedData:', !!report.extractedData);
   console.log('[REVIEW] 23. Results count:', report.extractedData?.results?.length || 0);
 
-  // Show success message with View JSON button if report is approved and not in repeat review mode
-  if (report.status === 'approved' && !showRepeatReview && report.finalData) {
+  // Show success message with View JSON button if report is approved/published and not in repeat review mode
+  if ((report.status === 'approved' || report.status === 'published') && !showRepeatReview && report.finalData) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -1241,10 +1245,12 @@ const ReviewReport: React.FC = () => {
           <CardContent sx={{ textAlign: 'center', py: 4 }}>
             <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
-              Report Approved Successfully
+              {report.status === 'published' ? 'Report Published Successfully' : 'Report Approved Successfully'}
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-              The report has been approved and is ready for integration.
+              {report.status === 'published'
+                ? 'The report has been published. No further changes can be made.'
+                : 'The report has been approved and is ready for integration.'}
             </Typography>
 
             {/* Action Buttons */}
@@ -1262,21 +1268,34 @@ const ReviewReport: React.FC = () => {
               >
                 Back to Reports
               </Button>
-              <Button
-                variant="outlined"
-                onClick={() => setShowRepeatReview(true)}
-              >
-                Repeat Review
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={isPublishing ? <CircularProgress size={20} color="inherit" /> : <PublishIcon />}
-                onClick={handlePublish}
-                disabled={isPublishing || isPublished}
-              >
-                {isPublished ? 'Published' : isPublishing ? 'Publishing...' : 'Publish'}
-              </Button>
+              {report.status === 'published' && (
+                <Button
+                  variant="outlined"
+                  color="info"
+                  onClick={() => setShowRepeatReview(true)}
+                >
+                  Review (Read-Only)
+                </Button>
+              )}
+              {report.status !== 'published' && (
+                <Button
+                  variant="outlined"
+                  onClick={() => setShowRepeatReview(true)}
+                >
+                  Repeat Review
+                </Button>
+              )}
+              {report.status !== 'published' && (
+                <Button
+                  variant="contained"
+                  color="success"
+                  startIcon={isPublishing ? <CircularProgress size={20} color="inherit" /> : <PublishIcon />}
+                  onClick={() => setShowPublishDialog(true)}
+                  disabled={isPublishing || isPublished}
+                >
+                  {isPublishing ? 'Publishing...' : 'Publish'}
+                </Button>
+              )}
             </Box>
           </CardContent>
         </Card>
@@ -1292,6 +1311,35 @@ const ReviewReport: React.FC = () => {
             />
           </Box>
         )}
+
+        {/* Publish Confirmation Dialog - needed in success view */}
+        <Dialog open={showPublishDialog} onClose={() => setShowPublishDialog(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PublishIcon sx={{ color: '#10B981' }} />
+            Confirm Publish
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body1" sx={{ mt: 1 }}>
+              Are you sure you want to publish this data?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Once published, you won't be able to update this report.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setShowPublishDialog(false)} variant="outlined">
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              onClick={handlePublish}
+              startIcon={<PublishIcon />}
+            >
+              Publish
+            </Button>
+          </DialogActions>
+        </Dialog>
       </div>
     );
   }
@@ -1340,9 +1388,9 @@ const ReviewReport: React.FC = () => {
                 height: 20,
                 fontSize: '10px',
                 fontWeight: 600,
-                bgcolor: report.status === 'ready' ? '#FEF3C7' : report.status === 'approved' ? '#D1FAE5' : report.status === 'rejected' ? '#FEE2E2' : '#F3F4F6',
-                color: report.status === 'ready' ? '#B45309' : report.status === 'approved' ? '#065F46' : report.status === 'rejected' ? '#991B1B' : '#6B7280',
-                border: `1px solid ${report.status === 'ready' ? '#FCD34D' : report.status === 'approved' ? '#6EE7B7' : report.status === 'rejected' ? '#FECACA' : '#D1D5DB'}`
+                bgcolor: report.status === 'ready' ? '#FEF3C7' : report.status === 'approved' ? '#D1FAE5' : report.status === 'published' ? '#DBEAFE' : report.status === 'rejected' ? '#FEE2E2' : '#F3F4F6',
+                color: report.status === 'ready' ? '#B45309' : report.status === 'approved' ? '#065F46' : report.status === 'published' ? '#1D4ED8' : report.status === 'rejected' ? '#991B1B' : '#6B7280',
+                border: `1px solid ${report.status === 'ready' ? '#FCD34D' : report.status === 'approved' ? '#6EE7B7' : report.status === 'published' ? '#93C5FD' : report.status === 'rejected' ? '#FECACA' : '#D1D5DB'}`
               }}
             />
           </Box>
@@ -1351,15 +1399,17 @@ const ReviewReport: React.FC = () => {
         {/* Repeat Review Alert */}
         {showRepeatReview && (
           <Alert
-            severity="info"
+            severity={report.status === 'published' ? 'warning' : 'info'}
             icon={<InfoIcon />}
             sx={{ mb: 2 }}
           >
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-              Repeat Review Mode
+              {report.status === 'published' ? 'Review Mode (Read-Only)' : 'Repeat Review Mode'}
             </Typography>
             <Typography variant="body2">
-              You are re-reviewing an approved report. Make your changes and click "Re-Approve" to regenerate the JSON output.
+              {report.status === 'published'
+                ? 'You are viewing a published report. No changes can be made.'
+                : 'You are re-reviewing an approved report. Make your changes and click "Re-Approve" to regenerate the JSON output.'}
             </Typography>
           </Alert>
         )}
@@ -1429,11 +1479,11 @@ const ReviewReport: React.FC = () => {
             boxShadow: 'none',
             height: '100%',
             minHeight: 48,
-            cursor: report.orderId ? 'pointer' : 'default',
-            '&:hover': report.orderId ? { bgcolor: '#F9FAFB' } : {}
+            cursor: (report.orderId && report.status !== 'published') ? 'pointer' : 'default',
+            '&:hover': (report.orderId && report.status !== 'published') ? { bgcolor: '#F9FAFB' } : {}
           }}
           onClick={() => {
-            if (report.orderId && !editingOrderId) {
+            if (report.orderId && !editingOrderId && report.status !== 'published') {
               setTempOrderId(report.orderId || '');
               setEditingOrderId(true);
             }
@@ -1757,9 +1807,10 @@ const ReviewReport: React.FC = () => {
                           <IconButton
                             size="small"
                             onClick={() => handleEditToggle(parameter._id || '')}
-                            title="Edit parameter"
+                            title={report.status === 'published' ? 'Cannot edit a published report' : 'Edit parameter'}
+                            disabled={report.status === 'published'}
                             sx={{
-                              color: '#6B7280',
+                              color: report.status === 'published' ? '#D1D5DB' : '#6B7280',
                               '&:hover': { bgcolor: '#F3F4F6', color: '#4361EE' },
                               width: 32,
                               height: 32
@@ -1771,9 +1822,10 @@ const ReviewReport: React.FC = () => {
                             size="small"
                             color="error"
                             onClick={() => handleDeleteClick(parameter._id || '', parameter.serviceItemName)}
-                            title="Delete parameter"
+                            title={report.status === 'published' ? 'Cannot delete from a published report' : 'Delete parameter'}
+                            disabled={report.status === 'published'}
                             sx={{
-                              color: '#EF4444',
+                              color: report.status === 'published' ? '#D1D5DB' : '#EF4444',
                               '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.08)' },
                               width: 32,
                               height: 32
@@ -1831,12 +1883,12 @@ const ReviewReport: React.FC = () => {
               </Typography>
             </Alert>
           )}
-          <Tooltip title="Re-validate all parameters against Parameter Master database">
+          <Tooltip title={report.status === 'published' ? 'Cannot modify a published report' : 'Re-validate all parameters against Parameter Master database'}>
             <Button
               variant="outlined"
               startIcon={revalidating ? <CircularProgress size={16} /> : <RefreshIcon />}
               onClick={handleRevalidate}
-              disabled={revalidating || !report.extractedData}
+              disabled={revalidating || !report.extractedData || report.status === 'published'}
               sx={{
                 borderColor: '#3B82F6',
                 color: '#3B82F6',
@@ -1861,8 +1913,8 @@ const ReviewReport: React.FC = () => {
             variant="outlined"
             startIcon={<CancelIcon />}
             onClick={() => setShowRejectDialog(true)}
-            disabled={!report.orderId}
-            title={!report.orderId ? 'Order ID required' : ''}
+            disabled={!report.orderId || report.status === 'published'}
+            title={report.status === 'published' ? 'Cannot reject a published report' : (!report.orderId ? 'Order ID required' : '')}
             sx={{
               borderColor: '#FCA5A5',
               color: '#EF4444',
@@ -1886,8 +1938,8 @@ const ReviewReport: React.FC = () => {
             variant="contained"
             startIcon={<ApproveIcon />}
             onClick={() => fetchValidationData()}
-            disabled={!report.orderId || loadingValidation}
-            title={!report.orderId ? 'Order ID required' : ''}
+            disabled={!report.orderId || loadingValidation || report.status === 'published'}
+            title={report.status === 'published' ? 'Cannot modify a published report' : (!report.orderId ? 'Order ID required' : '')}
             sx={{
               bgcolor: '#10B981',
               color: 'white',
@@ -2127,6 +2179,35 @@ const ReviewReport: React.FC = () => {
           <Button onClick={() => setShowRejectDialog(false)}>Cancel</Button>
           <Button variant="contained" color="error" onClick={handleReject}>
             Confirm Rejection
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Publish Confirmation Dialog */}
+      <Dialog open={showPublishDialog} onClose={() => setShowPublishDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <PublishIcon sx={{ color: '#10B981' }} />
+          Confirm Publish
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            Are you sure you want to publish this data?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Once published, you won't be able to update this report.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setShowPublishDialog(false)} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handlePublish}
+            startIcon={<PublishIcon />}
+          >
+            Publish
           </Button>
         </DialogActions>
       </Dialog>

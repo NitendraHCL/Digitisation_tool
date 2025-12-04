@@ -24,7 +24,7 @@ export interface AuthResponse {
 }
 
 // Report types
-export type ReportStatus = 'uploaded' | 'processing' | 'ready' | 'approved' | 'rejected' | 'error';
+export type ReportStatus = 'uploaded' | 'processing' | 'ready' | 'approved' | 'rejected' | 'error' | 'published';
 
 export interface ValidationFlag {
   resultIndex: number;
