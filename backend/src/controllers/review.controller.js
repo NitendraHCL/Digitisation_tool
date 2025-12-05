@@ -1661,8 +1661,8 @@ const publishReport = async (req, res) => {
         ...apiPart,
         id: rowId,
         _id: rowId,
-        g_creation_time: BigInt(Date.now()) * BigInt(1000000),
-        g_modify_time: BigInt(Date.now()) * BigInt(1000000)
+        g_creation_time: Date.now(),
+        g_modify_time: Date.now()
       };
 
       allResults.push(finalRow);
