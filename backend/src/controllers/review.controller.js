@@ -8,6 +8,15 @@ const AuditLog = require('../models/AuditLog');
 const externalDb = require('../services/externalDb.service');
 // const orderValidationService = require('../services/orderValidation.service');  // No longer needed - using observationData from Report
 
+// Helper function to convert various values to Boolean
+const toBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return value.toLowerCase() === 'true';
+  }
+  return Boolean(value);
+};
+
 // Helper function to calculate audit summary
 const calculateAuditSummary = (report, frontendReviewDuration = null) => {
   const totalParameters = report.extractedData?.results?.length || 0;
@@ -634,18 +643,18 @@ const updateOrderId = async (req, res) => {
       patient_age: obs.patient_age || '',
       patient_dob: obs.patient_dob || '',
       patient_gender: obs.patient_gender || '',
-      isOutsourced: obs.isOutsourced || '',
+      isOutsourced: toBoolean(obs.isOutsourced),
       patientType: obs.patientType || '',
       patient_name: obs.patient_name || '',
       referBy: obs.referBy || '',
       payer_id: obs.payer_id || '',
       payer_name: obs.payer_name || '',
       payer_type: obs.payer_type || '',
-      orderDateTime: obs.orderDateTime || '',
+      orderDateTime: obs.orderDateTime ?? null,
       telecom: obs.telecom || '',
       center_type_name: obs.center_type_name || '',
       package_id: obs.package_id || '',
-      part_of_package: obs.part_of_package || '',
+      part_of_package: toBoolean(obs.part_of_package),
       package_name: obs.package_name || '',
       email: obs.email || '',
       center_name: obs.center_name || '',
@@ -658,7 +667,7 @@ const updateOrderId = async (req, res) => {
       orderReferenceId: obs.orderReferenceId || '',
       reportStatus: obs.reportStatus || '',
       uploadedDocumentId: obs.uploadedDocumentId || '',
-      verificationDateTime: obs.verificationDateTime || '',
+      verificationDateTime: obs.verificationDateTime ?? null,
       outSourceCentre_id: obs.outSourceCentre_id || '',
       admittingDoctor: obs.admittingDoctor || '',
       cug_code: obs.cug_code || '',
@@ -1442,10 +1451,9 @@ const publishReport = async (req, res) => {
     const results = report.finalData.results;
 
     // Validation - check observation data conditions
-    // Note: part_of_package may be stored as string "true" or boolean true
     if (
       obs.status !== "Final" ||
-      String(obs.part_of_package) !== "true" ||
+      toBoolean(obs.part_of_package) !== true ||
       obs.serviceType_code !== "pathology"
     ) {
       return res.status(400).json({
@@ -1482,18 +1490,18 @@ const publishReport = async (req, res) => {
         patient_age: obs.patient_age || "",
         patient_dob: obs.patient_dob || "",
         patient_gender: obs.patient_gender || "",
-        isOutsourced: obs.isOutsourced || "",
+        isOutsourced: toBoolean(obs.isOutsourced),
         patientType: obs.patientType || "",
         patient_name: obs.patient_name || "",
         referBy: obs.referBy || "",
         payer_id: obs.payer_id || "",
         payer_name: obs.payer_name || "",
         payer_type: obs.payer_type || "",
-        orderDateTime: obs.orderDateTime || "",
+        orderDateTime: obs.orderDateTime ?? null,
         telecom: obs.telecom || "",
         center_type_name: obs.center_type_name || "",
         package_id: obs.package_id || "",
-        part_of_package: obs.part_of_package || "",
+        part_of_package: toBoolean(obs.part_of_package),
         package_name: obs.package_name || "",
         email: obs.email || "",
         center_name: obs.center_name || "",
@@ -1506,7 +1514,7 @@ const publishReport = async (req, res) => {
         orderReferenceId: obs.orderReferenceId || "",
         reportStatus: obs.reportStatus || "",
         uploadedDocumentId: obs.uploadedDocumentId || "",
-        verificationDateTime: obs.verificationDateTime || "",
+        verificationDateTime: obs.verificationDateTime ?? null,
         outSourceCentre_id: obs.outSourceCentre_id || "",
         admittingDoctor: obs.admittingDoctor || "",
         cug_code: obs.cug_code || "",
