@@ -64,8 +64,8 @@ const getDashboardStats = async (req, res) => {
       labDistribution,
       currentPeriodUsers,
       previousPeriodUsers,
-      approvedWithoutEdits,
-      approvedWithEdits
+      currentPeriodAccuracy,
+      previousPeriodAccuracy
     ] = await Promise.all([
       // Total reports (all time)
       Report.countDocuments(),
@@ -155,20 +155,45 @@ const getDashboardStats = async (req, res) => {
         createdAt: { $gte: previousStart, $lt: previousEnd }
       }),
 
-      // Approved reports without edits (no nurse corrections) - for accuracy calculation
-      Report.countDocuments({
-        status: 'approved',
-        $or: [
-          { editHistory: { $exists: false } },
-          { editHistory: { $size: 0 } }
-        ]
-      }),
+      // Weighted accuracy calculation for current period (reviewed reports)
+      Report.aggregate([
+        {
+          $match: {
+            status: { $in: ['approved', 'rejected', 'published'] },
+            'auditSummary.totalParameters': { $gt: 0 },
+            createdAt: { $gte: currentStart }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            weightedAccuracySum: {
+              $sum: { $multiply: ['$auditSummary.accuracyPercentage', '$auditSummary.totalParameters'] }
+            },
+            totalParams: { $sum: '$auditSummary.totalParameters' }
+          }
+        }
+      ]),
 
-      // Approved reports with edits (nurse made corrections) - for accuracy calculation
-      Report.countDocuments({
-        status: 'approved',
-        editHistory: { $exists: true, $not: { $size: 0 } }
-      })
+      // Weighted accuracy calculation for previous period (for trend)
+      Report.aggregate([
+        {
+          $match: {
+            status: { $in: ['approved', 'rejected', 'published'] },
+            'auditSummary.totalParameters': { $gt: 0 },
+            createdAt: { $gte: previousStart, $lt: previousEnd }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            weightedAccuracySum: {
+              $sum: { $multiply: ['$auditSummary.accuracyPercentage', '$auditSummary.totalParameters'] }
+            },
+            totalParams: { $sum: '$auditSummary.totalParameters' }
+          }
+        }
+      ])
     ]);
 
     // Format status counts
@@ -183,12 +208,18 @@ const getDashboardStats = async (req, res) => {
       userMap[item._id] = item.count;
     });
 
-    // Calculate Accuracy Rate using new formula:
-    // Accuracy Rate = (Approved without edits) / (Approved without edits + Approved with edits + Rejected)
-    // This measures how accurately the AI extracted data without requiring nurse corrections
-    const denominatorForAccuracy = approvedWithoutEdits + approvedWithEdits + (statusMap.rejected || 0);
-    const approvalRate = denominatorForAccuracy > 0
-      ? Math.round(approvedWithoutEdits / denominatorForAccuracy * 100)
+    // Calculate Accuracy Rate using weighted average formula:
+    // Overall Accuracy = Σ(accuracy_i × totalParams_i) / Σ(totalParams_i)
+    // This measures how accurately the AI extracted data weighted by parameter count
+    const currentAccuracyData = currentPeriodAccuracy[0];
+    const approvalRate = currentAccuracyData && currentAccuracyData.totalParams > 0
+      ? Math.round((currentAccuracyData.weightedAccuracySum / currentAccuracyData.totalParams) * 10) / 10
+      : 0;
+
+    // Calculate previous period accuracy for trend comparison
+    const prevAccuracyData = previousPeriodAccuracy[0];
+    const previousAccuracyRate = prevAccuracyData && prevAccuracyData.totalParams > 0
+      ? Math.round((prevAccuracyData.weightedAccuracySum / prevAccuracyData.totalParams) * 10) / 10
       : 0;
 
     const flaggedRate = totalReports > 0
@@ -246,7 +277,7 @@ const getDashboardStats = async (req, res) => {
         totalReports: calculateTrend(totalReports, totalReports - currentPeriodReports + previousPeriodReports),
         activeUsers: calculateTrend(currentPeriodUsers, previousPeriodUsers),
         processingTime: calculateTrend(currentAvgProcessingTime, previousAvgProcessingTime),
-        approvalRate: calculateTrend(approvalRate, approvalRate) // Will be refined with period-specific approval rates
+        approvalRate: calculateTrend(approvalRate, previousAccuracyRate) // Weighted accuracy trend
       }
     };
 

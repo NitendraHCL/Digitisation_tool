@@ -6,18 +6,25 @@ const getAuditSummary = async (req, res) => {
   try {
     console.log('[AUDIT ANALYTICS] Getting overall audit summary');
 
-    // Get all approved and rejected reports with audit summaries
+    // Get all approved, rejected, and published reports with audit summaries
     const reports = await Report.find({
-      status: { $in: ['approved', 'rejected'] },
+      status: { $in: ['approved', 'rejected', 'published'] },
       'auditSummary.totalParameters': { $gt: 0 }
     }).select('auditSummary status');
 
     const totalReports = reports.length;
 
-    // Calculate average accuracy
-    const avgAccuracy = reports.length > 0
-      ? reports.reduce((sum, r) => sum + (r.auditSummary?.accuracyPercentage || 0), 0) / reports.length
-      : 0;
+    // Calculate weighted average accuracy
+    // Formula: Σ(accuracy_i × totalParams_i) / Σ(totalParams_i)
+    let weightedSum = 0;
+    let totalParams = 0;
+    reports.forEach(r => {
+      const params = r.auditSummary?.totalParameters || 0;
+      const accuracy = r.auditSummary?.accuracyPercentage || 0;
+      weightedSum += accuracy * params;
+      totalParams += params;
+    });
+    const avgAccuracy = totalParams > 0 ? weightedSum / totalParams : 0;
 
     // Count total edits across all reports
     const totalEdits = reports.reduce((sum, r) => sum + (r.auditSummary?.editedParameters || 0), 0);
@@ -88,7 +95,7 @@ const getAuditReports = async (req, res) => {
 
     // Build query
     const query = {
-      status: { $in: ['approved', 'rejected'] },
+      status: { $in: ['approved', 'rejected', 'published'] },
       'auditSummary.totalParameters': { $gt: 0 }
     };
 
@@ -204,7 +211,7 @@ const getMostEditedParameters = async (req, res) => {
     console.log('[AUDIT ANALYTICS] Getting most edited parameters');
 
     const reports = await Report.find({
-      status: { $in: ['approved', 'rejected'] },
+      status: { $in: ['approved', 'rejected', 'published'] },
       'editHistory.0': { $exists: true }
     }).select('editHistory');
 
@@ -262,18 +269,35 @@ const getAccuracyTrends = async (req, res) => {
         dateFormat = { $dateToString: { format: '%Y-%m-%d', date: { $ifNull: ['$approvedAt', '$rejectedAt'] } } };
     }
 
+    // Use weighted average for trends: Σ(accuracy_i × totalParams_i) / Σ(totalParams_i)
     const trends = await Report.aggregate([
       {
         $match: {
-          status: { $in: ['approved', 'rejected'] },
+          status: { $in: ['approved', 'rejected', 'published'] },
           'auditSummary.totalParameters': { $gt: 0 }
         }
       },
       {
         $group: {
           _id: dateFormat,
-          avgAccuracy: { $avg: '$auditSummary.accuracyPercentage' },
+          weightedSum: {
+            $sum: { $multiply: ['$auditSummary.accuracyPercentage', '$auditSummary.totalParameters'] }
+          },
+          totalParams: { $sum: '$auditSummary.totalParameters' },
           count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          avgAccuracy: {
+            $cond: {
+              if: { $gt: ['$totalParams', 0] },
+              then: { $divide: ['$weightedSum', '$totalParams'] },
+              else: 0
+            }
+          },
+          count: 1
         }
       },
       {
