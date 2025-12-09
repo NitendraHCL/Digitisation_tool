@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppBar,
   Box,
@@ -22,6 +22,7 @@ import {
   useMediaQuery,
   Chip,
 } from '@mui/material';
+import api from '../../services/api';
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
@@ -67,6 +68,27 @@ const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopOpen, setDesktopOpen] = useState(true);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [readyReportsCount, setReadyReportsCount] = useState(0);
+
+  // Fetch ready reports count for review queue badge
+  useEffect(() => {
+    const fetchReadyCount = async () => {
+      if (!isNurse) return;
+      try {
+        const response = await api.get('/reports');
+        const reports = response.data.data || [];
+        const readyCount = reports.filter((r: any) => r.status === 'ready').length;
+        setReadyReportsCount(readyCount);
+      } catch (error) {
+        console.error('Failed to fetch ready reports count:', error);
+      }
+    };
+
+    fetchReadyCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchReadyCount, 30000);
+    return () => clearInterval(interval);
+  }, [isNurse]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -108,7 +130,7 @@ const Layout: React.FC = () => {
             title: 'Review Queue',
             path: '/nurse/review',
             icon: <CheckCircle />,
-            badge: 3, // Can be dynamic
+            badge: readyReportsCount >= 1 ? readyReportsCount : undefined,
           },
         ]
       : []),

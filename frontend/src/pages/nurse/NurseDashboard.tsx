@@ -23,6 +23,7 @@ const NurseDashboard: React.FC = () => {
     uploaded: 0,
     ready: 0,
     approved: 0,
+    published: 0,
     rejected: 0,
     flagged: 0,
   });
@@ -51,6 +52,7 @@ const NurseDashboard: React.FC = () => {
         uploaded: reportsData.filter((r: Report) => r.status === 'uploaded').length,
         ready: reportsData.filter((r: Report) => r.status === 'ready').length,
         approved: reportsData.filter((r: Report) => r.status === 'approved').length,
+        published: reportsData.filter((r: Report) => r.status === 'published').length,
         rejected: reportsData.filter((r: Report) => r.status === 'rejected').length,
         flagged: reportsData.filter((r: Report) => r.flags?.requiresAttention).length,
       });
@@ -79,6 +81,7 @@ const NurseDashboard: React.FC = () => {
       processing: 'info',
       ready: 'warning',
       approved: 'success',
+      published: 'info',
       rejected: 'error',
       error: 'error',
     };
@@ -324,6 +327,13 @@ const NurseDashboard: React.FC = () => {
           icon="✓"
           trend={`${Math.round((stats.approved / (stats.total || 1)) * 100)}% approval rate`}
           color={theme.colors.success}
+        />
+        <StatCard
+          title="Published"
+          value={stats.published}
+          icon="📤"
+          trend={stats.published > 0 ? `${stats.published} sent to HIS` : 'None published'}
+          color="#6366F1"
         />
         <StatCard
           title="Flagged"

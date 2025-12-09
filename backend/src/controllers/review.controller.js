@@ -1329,38 +1329,82 @@ const deleteParameter = async (req, res) => {
     let deletedParameter = null;
 
     if (report.extractedData?.results) {
-      const paramIndex = report.extractedData.results.findIndex(
+      // First try to find by _id or id
+      let paramIndex = report.extractedData.results.findIndex(
         param => param._id?.toString() === parameterId || param.id === parameterId
       );
+      console.log('[DELETE PARAMETER] Search by ID result:', paramIndex, 'for parameterId:', parameterId);
+
+      // If not found by ID, ALWAYS try by serviceItemName as fallback
+      if (paramIndex === -1 && parameterId) {
+        console.log('[DELETE PARAMETER] ID not found, trying serviceItemName fallback...');
+        paramIndex = report.extractedData.results.findIndex(
+          param => param.serviceItemName === parameterId || param.name === parameterId
+        );
+        console.log('[DELETE PARAMETER] serviceItemName search result:', paramIndex);
+      }
 
       if (paramIndex !== -1) {
         deletedParameter = report.extractedData.results[paramIndex];
         report.extractedData.results.splice(paramIndex, 1);
         parameterFound = true;
-        console.log('[DELETE PARAMETER] Removed from extractedData.results');
+        console.log('[DELETE PARAMETER] Removed from extractedData.results:', deletedParameter?.serviceItemName || deletedParameter?.name);
       }
     }
 
     // Also remove from pageWiseData if it exists
+    // Note: pageWiseData may use either 'testResults' or 'results' as the field name
     if (report.extractedData?.pageWiseData) {
       report.extractedData.pageWiseData.forEach(page => {
-        if (page.testResults) {
-          const pageParamIndex = page.testResults.findIndex(
+        // Check both possible field names: 'testResults' and 'results'
+        const resultsArrays = [
+          { name: 'testResults', arr: page.testResults },
+          { name: 'results', arr: page.results }
+        ].filter(r => r.arr && Array.isArray(r.arr));
+
+        resultsArrays.forEach(({ name, arr }) => {
+          let pageParamIndex = arr.findIndex(
             param => param._id?.toString() === parameterId || param.id === parameterId
           );
-          if (pageParamIndex !== -1) {
-            page.testResults.splice(pageParamIndex, 1);
-            console.log('[DELETE PARAMETER] Removed from pageWiseData');
+          // ALWAYS fallback to serviceItemName search if ID not found
+          if (pageParamIndex === -1 && parameterId) {
+            pageParamIndex = arr.findIndex(
+              param => param.serviceItemName === parameterId || param.name === parameterId
+            );
           }
-        }
+          // Also try matching by deletedParameter's name if we found one
+          if (pageParamIndex === -1 && deletedParameter) {
+            const delName = deletedParameter.serviceItemName || deletedParameter.name;
+            pageParamIndex = arr.findIndex(
+              param => param.serviceItemName === delName || param.name === delName
+            );
+          }
+          if (pageParamIndex !== -1) {
+            arr.splice(pageParamIndex, 1);
+            console.log(`[DELETE PARAMETER] Removed from pageWiseData.${name}`);
+          }
+        });
       });
     }
 
     // Also remove from finalData.results if it exists
     if (report.finalData?.results) {
-      const finalIndex = report.finalData.results.findIndex(
+      let finalIndex = report.finalData.results.findIndex(
         param => param._id?.toString() === parameterId || param.id === parameterId
       );
+      // ALWAYS fallback to serviceItemName search if ID not found
+      if (finalIndex === -1 && parameterId) {
+        finalIndex = report.finalData.results.findIndex(
+          param => param.serviceItemName === parameterId || param.name === parameterId
+        );
+      }
+      // Also try matching by deletedParameter's name if we found one
+      if (finalIndex === -1 && deletedParameter) {
+        const delName = deletedParameter.serviceItemName || deletedParameter.name;
+        finalIndex = report.finalData.results.findIndex(
+          param => param.serviceItemName === delName || param.name === delName
+        );
+      }
       if (finalIndex !== -1) {
         report.finalData.results.splice(finalIndex, 1);
         console.log('[DELETE PARAMETER] Removed from finalData.results');

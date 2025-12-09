@@ -785,10 +785,10 @@ The pages in this lab report are provided in their original sequential order. Yo
             let patientGenderFromPage = null;
             let dateOfTestFromPage = null;
 
-            // Check for lab name (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
+            // Check for lab name (extract from ANY page for smart fallback)
+            if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
               labNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. Lab name: ${labNameFromPage}`);
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. Lab name from page ${pageNumber}: ${labNameFromPage}`);
               allLines.shift();
             }
 
@@ -933,10 +933,7 @@ The pages in this lab report are provided in their original sequential order. Yo
       for (const pageData of pageResultsArray) {
         if (!pageData) continue; // Skip null results (skipped pages)
 
-        // Extract lab name from first page
-        if (pageData.pageNumber === 1 && pageData.labName) {
-          labNameGlobal = pageData.labName;
-        }
+        // Collect lab name from each page for smart fallback (will process after loop)
 
         // Extract patient demographics from first page
         if (pageData.pageNumber === 1) {
@@ -946,11 +943,12 @@ The pages in this lab report are provided in their original sequential order. Yo
           if (pageData.dateOfTest) dateOfTestGlobal = pageData.dateOfTest;
         }
 
-        // Add to page-wise data
+        // Add to page-wise data (include labName for smart fallback)
         pageWiseData.push({
           pageNumber: pageData.pageNumber,
           rawResponse: pageData.rawResponse,
           results: pageData.results,
+          labName: pageData.labName,
           extractionMetadata: pageData.extractionMetadata,
           extractedAt: pageData.extractedAt
         });
@@ -964,6 +962,29 @@ The pages in this lab report are provided in their original sequential order. Yo
           totalOutputTokens += pageData.extractionMetadata.outputTokens || 0;
           totalCost += pageData.extractionMetadata.cost || 0;
         }
+      }
+
+      // Smart Fallback: Determine lab name from all pages
+      // Priority: page 1 (if valid) > first page with valid lab name > "Unknown Lab"
+      const page1Data = pageWiseData.find(p => p.pageNumber === 1);
+      if (page1Data?.labName && page1Data.labName !== 'Unknown Lab') {
+        labNameGlobal = page1Data.labName;
+        console.log('[GEMINI PAGEWISE] Lab name from page 1:', labNameGlobal);
+      } else {
+        // Fallback: Find first valid lab name from other pages
+        for (const pageData of pageWiseData) {
+          if (pageData.labName && pageData.labName !== 'Unknown Lab') {
+            labNameGlobal = pageData.labName;
+            console.log(`[GEMINI PAGEWISE] Lab name fallback from page ${pageData.pageNumber}:`, labNameGlobal);
+            break;
+          }
+        }
+      }
+
+      // Final fallback if still unknown
+      if (!labNameGlobal) {
+        labNameGlobal = 'Unknown Lab';
+        console.log('[GEMINI PAGEWISE] WARNING: No valid lab name found on any page');
       }
 
       const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);

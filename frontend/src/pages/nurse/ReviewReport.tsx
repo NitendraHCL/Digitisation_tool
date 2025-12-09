@@ -71,6 +71,7 @@ import {
 } from '@mui/icons-material';
 import api, { BACKEND_BASE_URL } from '../../services/api';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '../../contexts/AuthContext';
 import { Report, TestParameter, TestResult, EditHistory } from '../../types';
 import PDFViewer from '../../components/common/PDFViewer';
 import ValidationFlag from '../../components/validation/ValidationFlag';
@@ -152,6 +153,7 @@ const ReviewReport: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  const { isAdmin } = useAuth();
 
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -940,21 +942,38 @@ const ReviewReport: React.FC = () => {
 
   const handleExclusionSubmit = async (data: any) => {
     try {
-      const response = await api.post('/exclusions', {
-        excludedParameter: data.parameterName,
-        unit: data.unit || null,
-        reason: data.reason,
-        labName: report?.extractedData?.labName || null
-      });
+      if (isAdmin) {
+        // Admin can directly add to exclusion list
+        const response = await api.post('/exclusions', {
+          excludedParameter: data.parameterName,
+          unit: data.unit || null,
+          labName: report?.extractedData?.labName || null,
+          reason: data.reason,
+        });
 
-      if (response.data.success) {
-        enqueueSnackbar('Parameter added to exclusion list successfully', { variant: 'success' });
-        setShowExclusionDialog(false);
-        // Refresh report to update validation flags
-        await fetchReport();
+        if (response.data.success) {
+          enqueueSnackbar('Parameter excluded successfully', { variant: 'success' });
+          setShowExclusionDialog(false);
+          setMismatchReason('');
+        }
+      } else {
+        // Non-admin creates a suggestion for approval
+        const response = await api.post('/exclusion-suggestions', {
+          suggestedParameter: data.parameterName,
+          suggestedUnit: data.unit || null,
+          suggestedLabName: report?.extractedData?.labName || null,
+          reason: data.reason,
+          reportId: id
+        });
+
+        if (response.data.success) {
+          enqueueSnackbar('Exclusion suggestion submitted for admin approval', { variant: 'success' });
+          setShowExclusionDialog(false);
+          setMismatchReason('');
+        }
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Failed to add parameter to exclusion list';
+      const errorMessage = error.response?.data?.message || 'Failed to process exclusion';
       enqueueSnackbar(errorMessage, { variant: 'error' });
     }
   };
@@ -1821,7 +1840,7 @@ const ReviewReport: React.FC = () => {
                           <IconButton
                             size="small"
                             color="error"
-                            onClick={() => handleDeleteClick(parameter._id || '', parameter.serviceItemName)}
+                            onClick={() => handleDeleteClick(parameter.serviceItemName, parameter.serviceItemName)}
                             title={report.status === 'published' ? 'Cannot delete from a published report' : 'Delete parameter'}
                             disabled={report.status === 'published'}
                             sx={{
@@ -2457,7 +2476,7 @@ const ReviewReport: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Add to Exclusion List Dialog */}
+      {/* Suggest Exclusion Dialog */}
       <Dialog
         open={showExclusionDialog}
         onClose={() => setShowExclusionDialog(false)}
@@ -2467,12 +2486,15 @@ const ReviewReport: React.FC = () => {
         <DialogTitle sx={{ bgcolor: '#FEF3C7', borderBottom: '2px solid #F59E0B' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <BlockIcon sx={{ mr: 1, color: '#F59E0B' }} />
-            Add to Exclusion List
+            Suggest Parameter Exclusion
           </Box>
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Your suggestion will be sent to an administrator for approval.
+          </Alert>
           <Typography variant="body2" gutterBottom>
-            Add this parameter to the exclusion list to skip validation for future reports.
+            Suggest this parameter for exclusion to skip validation in future reports.
           </Typography>
           <Box sx={{ mt: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 1 }}>
             <Typography variant="subtitle2" color="text.secondary">Parameter Name:</Typography>
@@ -2517,7 +2539,7 @@ const ReviewReport: React.FC = () => {
             disabled={!mismatchReason.trim()}
             sx={{ bgcolor: '#F59E0B', '&:hover': { bgcolor: '#D97706' } }}
           >
-            Add to Exclusion List
+            Submit Suggestion
           </Button>
         </DialogActions>
       </Dialog>

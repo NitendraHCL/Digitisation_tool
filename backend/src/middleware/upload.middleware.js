@@ -29,8 +29,8 @@ const fileFilter = (req, file, cb) => {
   console.log('[UPLOAD MIDDLEWARE] ========== FILE VALIDATION ==========');
   console.log('[UPLOAD MIDDLEWARE] Validating file:', file.originalname);
   console.log('[UPLOAD MIDDLEWARE] Mimetype:', file.mimetype);
-  console.log('[UPLOAD MIDDLEWARE] File size limit:', process.env.MAX_FILE_SIZE || '10485760', 'bytes');
-  console.log('[UPLOAD MIDDLEWARE] File size limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024)));
+  console.log('[UPLOAD MIDDLEWARE] File size limit:', process.env.MAX_FILE_SIZE || '31457280', 'bytes');
+  console.log('[UPLOAD MIDDLEWARE] File size limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 31457280) / (1024 * 1024)));
 
   if (file.mimetype === 'application/pdf') {
     console.log('[UPLOAD MIDDLEWARE] ✓ Valid PDF file');
@@ -47,7 +47,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 // 10MB default
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 30 * 1024 * 1024 // 30MB default
   }
 });
 
@@ -59,8 +59,8 @@ const handleUploadError = (err, req, res, next) => {
     console.error('[UPLOAD MIDDLEWARE] Error message:', err.message);
     console.error('[UPLOAD MIDDLEWARE] Error code:', err.code);
     console.error('[UPLOAD MIDDLEWARE] Current MAX_FILE_SIZE env:', process.env.MAX_FILE_SIZE);
-    console.error('[UPLOAD MIDDLEWARE] Configured limit (bytes):', parseInt(process.env.MAX_FILE_SIZE) || 10485760);
-    console.error('[UPLOAD MIDDLEWARE] Configured limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024)));
+    console.error('[UPLOAD MIDDLEWARE] Configured limit (bytes):', parseInt(process.env.MAX_FILE_SIZE) || 31457280);
+    console.error('[UPLOAD MIDDLEWARE] Configured limit (MB):', Math.round((parseInt(process.env.MAX_FILE_SIZE) || 31457280) / (1024 * 1024)));
 
     if (req.file) {
       console.error('[UPLOAD MIDDLEWARE] File that failed:', {
@@ -75,12 +75,12 @@ const handleUploadError = (err, req, res, next) => {
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      const maxSizeMB = Math.round((parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024));
+      const maxSizeMB = Math.round((parseInt(process.env.MAX_FILE_SIZE) || 31457280) / (1024 * 1024));
       return res.status(400).json({
         success: false,
         message: `File size too large. Maximum size is ${maxSizeMB}MB.`,
         details: {
-          maxSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760,
+          maxSize: parseInt(process.env.MAX_FILE_SIZE) || 31457280,
           maxSizeMB: maxSizeMB
         }
       });

@@ -309,6 +309,17 @@ try {
   console.error('[SERVER] Stack trace:', error.stack);
 }
 
+// Exclusion Suggestion routes
+console.log('[SERVER] Loading exclusion suggestion routes...');
+try {
+  const exclusionSuggestionRoutes = require('./src/routes/exclusionSuggestion.routes');
+  app.use('/api/exclusion-suggestions', exclusionSuggestionRoutes);
+  console.log('[SERVER] ✓ Exclusion suggestion routes registered at /api/exclusion-suggestions');
+} catch (error) {
+  console.error('[SERVER] ✗ ERROR loading exclusion suggestion routes:', error.message);
+  console.error('[SERVER] Stack trace:', error.stack);
+}
+
 console.log('[SERVER] ========== ALL ROUTES LOADED ==========');
 
 // 404 handler

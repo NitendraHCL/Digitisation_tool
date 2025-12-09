@@ -25,10 +25,12 @@ import {
   Card,
   CardContent,
   Grid,
+  Tabs,
+  Tab,
+  Badge,
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Edit as EditIcon,
   Delete as DeleteIcon,
   Restore as RestoreIcon,
   Search as SearchIcon,
@@ -38,6 +40,11 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as ActiveIcon,
   Cancel as InactiveIcon,
+  Lightbulb as SuggestionIcon,
+  Check as ApproveIcon,
+  Close as RejectIcon,
+  Pending as PendingIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import api from '../../services/api';
@@ -66,6 +73,28 @@ interface ExclusionFormData {
   reason: string;
 }
 
+interface ExclusionSuggestion {
+  _id: string;
+  suggestedParameter: string;
+  suggestedUnit?: string | null;
+  suggestedLabName?: string | null;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  suggestedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  reviewedBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  } | null;
+  reviewNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const ExclusionMasterManagement: React.FC = () => {
   const { enqueueSnackbar } = useSnackbar();
 
@@ -92,6 +121,23 @@ const ExclusionMasterManagement: React.FC = () => {
     parameterOnly: 0,
     unitSpecific: 0,
     labSpecific: 0,
+  });
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState(0);
+
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState<ExclusionSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<ExclusionSuggestion | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [suggestionStats, setSuggestionStats] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    total: 0,
   });
 
   // Fetch exclusions
@@ -130,9 +176,86 @@ const ExclusionMasterManagement: React.FC = () => {
     }
   };
 
+  // Fetch pending exclusion suggestions
+  const fetchSuggestions = async () => {
+    setSuggestionsLoading(true);
+    try {
+      const [suggestionsRes, statsRes] = await Promise.all([
+        api.get('/exclusion-suggestions', { params: { status: 'pending' } }),
+        api.get('/exclusion-suggestions/stats')
+      ]);
+
+      if (suggestionsRes.data.success) {
+        setSuggestions(suggestionsRes.data.data);
+      }
+      if (statsRes.data.success) {
+        const statsData = statsRes.data.data;
+        setPendingSuggestionsCount(statsData.pending);
+        setSuggestionStats({
+          pending: statsData.pending || 0,
+          approved: statsData.approved || 0,
+          rejected: statsData.rejected || 0,
+          total: statsData.total || 0,
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch suggestions:', error);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  };
+
+  // Approve an exclusion suggestion
+  const handleApproveSuggestion = async (suggestion: ExclusionSuggestion) => {
+    try {
+      const response = await api.post(`/exclusion-suggestions/${suggestion._id}/approve`);
+      if (response.data.success) {
+        enqueueSnackbar('Suggestion approved and exclusion created', { variant: 'success' });
+        fetchSuggestions();
+        fetchExclusions();
+        fetchStats();
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to approve suggestion';
+      enqueueSnackbar(message, { variant: 'error' });
+    }
+  };
+
+  // Open reject dialog
+  const handleOpenRejectDialog = (suggestion: ExclusionSuggestion) => {
+    setSelectedSuggestion(suggestion);
+    setRejectReason('');
+    setShowRejectDialog(true);
+  };
+
+  // Reject an exclusion suggestion
+  const handleRejectSuggestion = async () => {
+    if (!selectedSuggestion || !rejectReason.trim()) {
+      enqueueSnackbar('Rejection reason is required', { variant: 'warning' });
+      return;
+    }
+
+    try {
+      const response = await api.post(`/exclusion-suggestions/${selectedSuggestion._id}/reject`, {
+        reason: rejectReason.trim()
+      });
+      if (response.data.success) {
+        enqueueSnackbar('Suggestion rejected', { variant: 'success' });
+        setShowRejectDialog(false);
+        setSelectedSuggestion(null);
+        setRejectReason('');
+        fetchSuggestions();
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to reject suggestion';
+      enqueueSnackbar(message, { variant: 'error' });
+    }
+  };
+
   useEffect(() => {
     fetchExclusions();
     fetchStats();
+    fetchSuggestions();
   }, [page, rowsPerPage, searchTerm]);
 
   // Handle search
@@ -273,16 +396,35 @@ const ExclusionMasterManagement: React.FC = () => {
             Manage parameters excluded from validation
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleAdd}
-          sx={{ bgcolor: '#F59E0B', '&:hover': { bgcolor: '#D97706' } }}
-        >
-          Add Exclusion
-        </Button>
+        {activeTab === 0 && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAdd}
+            sx={{ bgcolor: '#F59E0B', '&:hover': { bgcolor: '#D97706' } }}
+          >
+            Add Exclusion
+          </Button>
+        )}
       </Box>
 
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
+          <Tab label="Exclusions" />
+          <Tab
+            label={
+              <Badge badgeContent={pendingSuggestionsCount} color="error">
+                Suggestions
+              </Badge>
+            }
+          />
+        </Tabs>
+      </Box>
+
+      {/* Tab Panel 0: Exclusions */}
+      {activeTab === 0 && (
+        <>
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid size={{ xs: 12, md: 3 }}>
@@ -530,6 +672,165 @@ const ExclusionMasterManagement: React.FC = () => {
           onRowsPerPageChange={handleChangeRowsPerPage}
         />
       </Paper>
+      </>
+      )}
+
+      {/* Tab Panel 1: Exclusion Suggestions */}
+      {activeTab === 1 && (
+        <>
+          {/* Suggestion Stats */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Paper sx={{ p: 2, flex: 1, minWidth: 150, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <PendingIcon sx={{ mr: 1.5, color: '#F59E0B', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 600 }}>{suggestionStats.pending}</Typography>
+                  <Typography variant="body2" color="text.secondary">Pending Review</Typography>
+                </Box>
+              </Box>
+            </Paper>
+            <Paper sx={{ p: 2, flex: 1, minWidth: 150, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <ApproveIcon sx={{ mr: 1.5, color: '#10B981', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 600 }}>{suggestionStats.approved}</Typography>
+                  <Typography variant="body2" color="text.secondary">Approved</Typography>
+                </Box>
+              </Box>
+            </Paper>
+            <Paper sx={{ p: 2, flex: 1, minWidth: 150, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <RejectIcon sx={{ mr: 1.5, color: '#EF4444', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 600 }}>{suggestionStats.rejected}</Typography>
+                  <Typography variant="body2" color="text.secondary">Rejected</Typography>
+                </Box>
+              </Box>
+            </Paper>
+            <Paper sx={{ p: 2, flex: 1, minWidth: 150, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <InfoIcon sx={{ mr: 1.5, color: '#6366F1', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 600 }}>{suggestionStats.total}</Typography>
+                  <Typography variant="body2" color="text.secondary">Total</Typography>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+
+        <Paper sx={{ p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <SuggestionIcon sx={{ color: '#F59E0B', mr: 1 }} />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                Pending Exclusion Suggestions
+              </Typography>
+            </Box>
+            <IconButton onClick={fetchSuggestions} title="Refresh">
+              <RefreshIcon />
+            </IconButton>
+          </Box>
+
+          {suggestionsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : suggestions.length === 0 ? (
+            <Alert severity="info">No pending suggestions at the moment.</Alert>
+          ) : (
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: '#F9FAFB' }}>
+                    <TableCell sx={{ fontWeight: 600 }}>Parameter</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Unit</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Lab</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Reason</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Suggested By</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {suggestions.map((suggestion) => (
+                    <TableRow key={suggestion._id} hover>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {suggestion.suggestedParameter}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color={suggestion.suggestedUnit ? 'text.primary' : 'text.secondary'}>
+                          {suggestion.suggestedUnit || 'All units'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color={suggestion.suggestedLabName ? 'text.primary' : 'text.secondary'}>
+                          {suggestion.suggestedLabName || 'All labs'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip title={suggestion.reason}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              maxWidth: 200,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {suggestion.reason}
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {suggestion.suggestedBy?.name || 'Unknown'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {suggestion.suggestedBy?.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {new Date(suggestion.createdAt).toLocaleDateString()}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {new Date(suggestion.createdAt).toLocaleTimeString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                          <Tooltip title="Approve and add to exclusion list">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleApproveSuggestion(suggestion)}
+                              sx={{ color: '#10B981' }}
+                            >
+                              <ApproveIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Reject suggestion">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenRejectDialog(suggestion)}
+                              sx={{ color: '#EF4444' }}
+                            >
+                              <RejectIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+        </>
+      )}
 
       {/* Add Exclusion Dialog */}
       <Dialog
@@ -650,6 +951,63 @@ const ExclusionMasterManagement: React.FC = () => {
             startIcon={saving ? <CircularProgress size={16} /> : <DeleteIcon />}
           >
             {saving ? 'Removing...' : 'Remove Exclusion'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reject Suggestion Dialog */}
+      <Dialog
+        open={showRejectDialog}
+        onClose={() => setShowRejectDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#FEE2E2', borderBottom: '2px solid #EF4444' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <RejectIcon sx={{ mr: 1, color: '#EF4444' }} />
+            Reject Exclusion Suggestion
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {selectedSuggestion && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: '#F9FAFB', borderRadius: 1 }}>
+              <Typography variant="subtitle2" color="text.secondary">Suggested Parameter:</Typography>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {selectedSuggestion.suggestedParameter}
+              </Typography>
+              {selectedSuggestion.suggestedUnit && (
+                <>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>Unit:</Typography>
+                  <Typography variant="body1">{selectedSuggestion.suggestedUnit}</Typography>
+                </>
+              )}
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>Reason for suggestion:</Typography>
+              <Typography variant="body2">{selectedSuggestion.reason}</Typography>
+            </Box>
+          )}
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Rejection Reason"
+            placeholder="Please provide a reason for rejecting this suggestion"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            required
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowRejectDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleRejectSuggestion}
+            disabled={!rejectReason.trim()}
+            startIcon={<RejectIcon />}
+          >
+            Reject Suggestion
           </Button>
         </DialogActions>
       </Dialog>
