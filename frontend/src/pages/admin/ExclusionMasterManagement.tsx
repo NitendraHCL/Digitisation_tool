@@ -139,6 +139,7 @@ const ExclusionMasterManagement: React.FC = () => {
     rejected: 0,
     total: 0,
   });
+  const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
   // Fetch exclusions
   const fetchExclusions = async () => {
@@ -176,12 +177,16 @@ const ExclusionMasterManagement: React.FC = () => {
     }
   };
 
-  // Fetch pending exclusion suggestions
+  // Fetch exclusion suggestions
   const fetchSuggestions = async () => {
     setSuggestionsLoading(true);
     try {
       const [suggestionsRes, statsRes] = await Promise.all([
-        api.get('/exclusion-suggestions', { params: { status: 'pending' } }),
+        api.get('/exclusion-suggestions', {
+          params: {
+            status: suggestionStatusFilter === 'all' ? undefined : suggestionStatusFilter
+          }
+        }),
         api.get('/exclusion-suggestions/stats')
       ]);
 
@@ -203,6 +208,20 @@ const ExclusionMasterManagement: React.FC = () => {
     } finally {
       setSuggestionsLoading(false);
     }
+  };
+
+  // Helper functions for status
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return 'warning';
+      case 'approved': return 'success';
+      case 'rejected': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   // Approve an exclusion suggestion
@@ -256,7 +275,7 @@ const ExclusionMasterManagement: React.FC = () => {
     fetchExclusions();
     fetchStats();
     fetchSuggestions();
-  }, [page, rowsPerPage, searchTerm]);
+  }, [page, rowsPerPage, searchTerm, suggestionStatusFilter]);
 
   // Handle search
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -718,12 +737,31 @@ const ExclusionMasterManagement: React.FC = () => {
             </Paper>
           </Box>
 
+        {/* Status Filter */}
+        <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
+              Filter by Status:
+            </Typography>
+            {(['all', 'pending', 'approved', 'rejected'] as const).map((status) => (
+              <Chip
+                key={status}
+                label={status === 'all' ? 'All' : getStatusLabel(status)}
+                onClick={() => setSuggestionStatusFilter(status)}
+                color={suggestionStatusFilter === status ? (status === 'all' ? 'primary' : getStatusColor(status) as any) : 'default'}
+                variant={suggestionStatusFilter === status ? 'filled' : 'outlined'}
+                sx={{ cursor: 'pointer' }}
+              />
+            ))}
+          </Box>
+        </Paper>
+
         <Paper sx={{ p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <SuggestionIcon sx={{ color: '#F59E0B', mr: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Pending Exclusion Suggestions
+                Exclusion Suggestions
               </Typography>
             </Box>
             <IconButton onClick={fetchSuggestions} title="Refresh">
@@ -736,7 +774,11 @@ const ExclusionMasterManagement: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : suggestions.length === 0 ? (
-            <Alert severity="info">No pending suggestions at the moment.</Alert>
+            <Alert severity="info">
+              {suggestionStatusFilter === 'all'
+                ? 'No suggestions found.'
+                : `No ${suggestionStatusFilter} suggestions found.`}
+            </Alert>
           ) : (
             <TableContainer>
               <Table>
@@ -748,6 +790,7 @@ const ExclusionMasterManagement: React.FC = () => {
                     <TableCell sx={{ fontWeight: 600 }}>Reason</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Suggested By</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -800,27 +843,47 @@ const ExclusionMasterManagement: React.FC = () => {
                           {new Date(suggestion.createdAt).toLocaleTimeString()}
                         </Typography>
                       </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={getStatusLabel(suggestion.status)}
+                          size="small"
+                          color={getStatusColor(suggestion.status) as any}
+                        />
+                        {suggestion.reviewNotes && (
+                          <Tooltip title={suggestion.reviewNotes}>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, cursor: 'help' }}>
+                              {suggestion.reviewNotes.length > 30 ? suggestion.reviewNotes.substring(0, 30) + '...' : suggestion.reviewNotes}
+                            </Typography>
+                          </Tooltip>
+                        )}
+                      </TableCell>
                       <TableCell align="right">
-                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                          <Tooltip title="Approve and add to exclusion list">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleApproveSuggestion(suggestion)}
-                              sx={{ color: '#10B981' }}
-                            >
-                              <ApproveIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Reject suggestion">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleOpenRejectDialog(suggestion)}
-                              sx={{ color: '#EF4444' }}
-                            >
-                              <RejectIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                        {suggestion.status === 'pending' ? (
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                            <Tooltip title="Approve and add to exclusion list">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleApproveSuggestion(suggestion)}
+                                sx={{ color: '#10B981' }}
+                              >
+                                <ApproveIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Reject suggestion">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleOpenRejectDialog(suggestion)}
+                                sx={{ color: '#EF4444' }}
+                              >
+                                <RejectIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            {suggestion.reviewedBy?.name ? `By ${suggestion.reviewedBy.name}` : '-'}
+                          </Typography>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -40,6 +40,14 @@ export interface ValidationFlag {
   exclusionReason?: string;
 }
 
+export interface ProcessingIssues {
+  hasIncompleteProcessing: boolean;
+  totalPages: number | null;
+  processedPages: number | null;
+  failedPages: number[];
+  message: string | null;
+}
+
 export interface Report {
   _id: string;
   orderId: string;
@@ -65,6 +73,7 @@ export interface Report {
   processingMetadata?: ProcessingMetadata;
   finalData?: FinalData;
   auditSummary?: AuditSummary;
+  processingIssues?: ProcessingIssues;
 }
 
 export interface AuditSummary {
@@ -330,4 +339,71 @@ export interface AuditTrendEntry {
 export interface AuditParameterEntry {
   parameter: string;
   count: number;
+}
+
+// Suggestion Types
+export type SuggestionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ParameterSuggestion {
+  _id: string;
+  parameterName: string;
+  suggestionType: 'new_parameter' | 'alias' | 'unit_conversion';
+  suggestedValue?: string;
+  suggestedUnit?: string;
+  suggestedAlias?: string;
+  reason?: string;
+  suggestedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  status: SuggestionStatus;
+  reviewNotes?: string;
+  reviewedBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExclusionSuggestion {
+  _id: string;
+  parameterName: string;
+  exclusionType: 'parameter' | 'unit';
+  unitName?: string;
+  reason?: string;
+  suggestedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  status: SuggestionStatus;
+  reviewNotes?: string;
+  reviewedBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CombinedRequest {
+  _id: string;
+  type: 'parameter' | 'exclusion';
+  parameterName: string;
+  action: string;
+  details: string;
+  reason?: string;
+  status: SuggestionStatus;
+  reviewNotes?: string;
+  reviewedBy?: {
+    name: string;
+  };
+  reviewedAt?: string;
+  createdAt: string;
 }

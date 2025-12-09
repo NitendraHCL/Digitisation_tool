@@ -19,6 +19,7 @@ import UploadReport from './pages/nurse/UploadReport';
 import ReviewReport from './pages/nurse/ReviewReport';
 import ReportsList from './pages/nurse/ReportsList';
 import AllReportsList from './pages/nurse/AllReportsList';
+import MyRequests from './pages/nurse/MyRequests';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -97,6 +98,14 @@ function App() {
                   element={
                     <ProtectedRoute allowedRoles={['nurse', 'admin', 'super_admin']}>
                       <AllReportsList />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="nurse/my-requests"
+                  element={
+                    <ProtectedRoute allowedRoles={['nurse', 'admin', 'super_admin']}>
+                      <MyRequests />
                     </ProtectedRoute>
                   }
                 />

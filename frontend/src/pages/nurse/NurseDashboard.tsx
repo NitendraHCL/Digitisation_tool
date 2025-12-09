@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LinearProgress } from '@mui/material';
+import { LinearProgress, CircularProgress, Tooltip } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { Report } from '../../types';
 import api from '../../services/api';
@@ -27,6 +27,7 @@ const NurseDashboard: React.FC = () => {
     rejected: 0,
     flagged: 0,
   });
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchReports();
@@ -72,6 +73,20 @@ const NurseDashboard: React.FC = () => {
       setTimeout(fetchReports, 2000);
     } catch (error) {
       enqueueSnackbar('Failed to process report', { variant: 'error' });
+    }
+  };
+
+  const handleReprocess = async (reportId: string) => {
+    try {
+      setReprocessingId(reportId);
+      await api.post(`/reports/${reportId}/reprocess`);
+      enqueueSnackbar('Report reprocessing started', { variant: 'info' });
+      setTimeout(fetchReports, 3000);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to reprocess report';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    } finally {
+      setReprocessingId(null);
     }
   };
 
@@ -136,8 +151,22 @@ const NurseDashboard: React.FC = () => {
     {
       key: 'status',
       label: 'Status',
-      render: (value: string) => (
-        <Badge label={value.toUpperCase()} variant={getStatusBadgeVariant(value)} />
+      render: (value: string, row: Report) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Badge label={value.toUpperCase()} variant={getStatusBadgeVariant(value)} />
+          {row.processingIssues?.hasIncompleteProcessing && (
+            <Tooltip title={row.processingIssues.message || 'Incomplete processing detected'}>
+              <span style={{
+                color: theme.colors.warning,
+                cursor: 'help',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                ⚠
+              </span>
+            </Tooltip>
+          )}
+        </div>
       ),
     },
     {
@@ -213,6 +242,49 @@ const NurseDashboard: React.FC = () => {
             >
               Review
             </button>
+          )}
+          {row.processingIssues?.hasIncompleteProcessing && row.status === 'ready' && (
+            <Tooltip title={row.processingIssues.message || 'Reprocess this report'}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReprocess(row._id);
+                }}
+                disabled={reprocessingId === row._id}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: theme.typography.sizes.tiny,
+                  fontWeight: theme.typography.weights.medium,
+                  fontFamily: theme.typography.fontFamily,
+                  backgroundColor: '#F97316',
+                  color: theme.colors.surface,
+                  border: 'none',
+                  borderRadius: theme.radius.sm,
+                  cursor: reprocessingId === row._id ? 'not-allowed' : 'pointer',
+                  transition: theme.transitions.fast,
+                  opacity: reprocessingId === row._id ? 0.7 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                onMouseEnter={(e) => {
+                  if (reprocessingId !== row._id) {
+                    e.currentTarget.style.opacity = '0.85';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (reprocessingId !== row._id) {
+                    e.currentTarget.style.opacity = '1';
+                  }
+                }}
+              >
+                {reprocessingId === row._id ? (
+                  <CircularProgress size={12} sx={{ color: 'white' }} />
+                ) : (
+                  'Reprocess'
+                )}
+              </button>
+            </Tooltip>
           )}
           <button
             onClick={(e) => {

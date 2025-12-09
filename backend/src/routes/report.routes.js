@@ -14,7 +14,8 @@ const {
 const {
   processReport,
   processMultipleReports,
-  getExtractedData
+  getExtractedData,
+  reprocessReport
 } = require('../controllers/process.controller');
 const { authenticate, isNurseOrAdmin, isAdmin } = require('../middleware/auth.middleware');
 const { uploadPDF: uploadMiddleware, uploadMultiplePDFs: uploadMultipleMiddleware, handleUploadError } = require('../middleware/upload.middleware');
@@ -38,6 +39,7 @@ router.post('/:id/process', isNurseOrAdmin, processReport);
 router.post('/process-multiple', isNurseOrAdmin, processMultipleReports);
 router.get('/:id/extracted', isNurseOrAdmin, getExtractedData);
 router.post('/:id/revalidate', isNurseOrAdmin, revalidateParameters);
+router.post('/:id/reprocess', isNurseOrAdmin, reprocessReport);
 
 // Delete report (nurses can delete their own, admins can delete any)
 router.delete('/:id', isNurseOrAdmin, deleteReport);

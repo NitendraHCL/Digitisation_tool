@@ -25,6 +25,7 @@ import {
   Avatar,
   Pagination,
   Stack,
+  CircularProgress,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -36,6 +37,8 @@ import {
   HourglassEmpty,
   Error as ErrorIcon,
   CloudUpload as UploadIcon,
+  Refresh as RefreshIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -66,6 +69,7 @@ const AllReportsList: React.FC = () => {
     published: 0,
     error: 0,
   });
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchReports();
@@ -163,6 +167,21 @@ const AllReportsList: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to delete report';
       enqueueSnackbar(errorMessage, { variant: 'error' });
+    }
+  };
+
+  const handleReprocess = async (reportId: string) => {
+    try {
+      setReprocessingId(reportId);
+      await api.post(`/reports/${reportId}/reprocess`);
+      enqueueSnackbar('Report reprocessing started', { variant: 'info' });
+      // Poll for updates
+      setTimeout(fetchReports, 3000);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to reprocess report';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    } finally {
+      setReprocessingId(null);
     }
   };
 
@@ -544,6 +563,11 @@ const AllReportsList: React.FC = () => {
                               <ErrorIcon fontSize="small" color="warning" />
                             </Tooltip>
                           )}
+                          {report.processingIssues?.hasIncompleteProcessing && (
+                            <Tooltip title={`Incomplete processing: ${report.processingIssues.message}. Click Reprocess to retry.`}>
+                              <WarningIcon fontSize="small" color="warning" />
+                            </Tooltip>
+                          )}
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -606,6 +630,33 @@ const AllReportsList: React.FC = () => {
                               <DownloadIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
+                          {/* Reprocess button - show when processing is incomplete or has error */}
+                          {(report.processingIssues?.hasIncompleteProcessing || report.status === 'error') && (
+                            <Tooltip title={report.processingIssues?.hasIncompleteProcessing
+                              ? `Reprocess (${report.processingIssues.message})`
+                              : "Reprocess report"}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReprocess(report._id);
+                                }}
+                                disabled={reprocessingId === report._id}
+                                sx={{
+                                  '&:hover': {
+                                    bgcolor: 'warning.light',
+                                    color: 'warning.main'
+                                  }
+                                }}
+                              >
+                                {reprocessingId === report._id ? (
+                                  <CircularProgress size={18} />
+                                ) : (
+                                  <RefreshIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                            </Tooltip>
+                          )}
                           {/* Only show delete button if report is not approved/published AND (user is admin OR owns the report) */}
                           {report.status !== 'approved' && report.status !== 'published' && (isAdmin || report.uploadedBy.id === user?.id) && (
                             <Tooltip title="Delete Report">

@@ -2235,6 +2235,14 @@ const ReviewReport: React.FC = () => {
       <Dialog open={showHistory} onClose={() => setShowHistory(false)} maxWidth="md" fullWidth>
         <DialogTitle>Edit History</DialogTitle>
         <DialogContent>
+          {/* Show approval info if report is approved */}
+          {report.status === 'approved' && report.approvedBy && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>Approved by</strong> {report.approvedBy.name || report.approvedBy.email}, {report.approvedAt ? new Date(report.approvedAt).toLocaleString() : 'N/A'}
+              </Typography>
+            </Alert>
+          )}
           {report.editHistory && report.editHistory.length > 0 ? (
             <List>
               {report.editHistory.map((edit, index) => (
@@ -2244,7 +2252,7 @@ const ReviewReport: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText
                     primary={`${edit.field}: ${edit.originalValue} → ${edit.newValue}`}
-                    secondary={`Edited on ${new Date(edit.editedAt).toLocaleString()}${edit.reason ? ` - ${edit.reason}` : ''}`}
+                    secondary={`Edited by ${edit.editedBy?.name || 'Unknown'} on ${new Date(edit.editedAt).toLocaleString()}${edit.reason ? ` - ${edit.reason}` : ''}`}
                   />
                 </ListItem>
               ))}

@@ -33,7 +33,6 @@ import {
   Assessment as AnalyticsIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
-  Notifications as NotificationsIcon,
   CheckCircle,
   CheckCircle as ApprovedIcon,
   Warning as FlagIcon,
@@ -44,6 +43,7 @@ import {
   History as AuditIcon,
   ListAlt as ParameterIcon,
   Block as ExclusionIcon,
+  Inbox as InboxIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -69,6 +69,8 @@ const Layout: React.FC = () => {
   const [desktopOpen, setDesktopOpen] = useState(true);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [readyReportsCount, setReadyReportsCount] = useState(0);
+  const [pendingParamSuggestions, setPendingParamSuggestions] = useState(0);
+  const [pendingExclusionSuggestions, setPendingExclusionSuggestions] = useState(0);
 
   // Fetch ready reports count for review queue badge
   useEffect(() => {
@@ -89,6 +91,28 @@ const Layout: React.FC = () => {
     const interval = setInterval(fetchReadyCount, 30000);
     return () => clearInterval(interval);
   }, [isNurse]);
+
+  // Fetch pending suggestions count for admin sidebar badges
+  useEffect(() => {
+    const fetchPendingSuggestionsCount = async () => {
+      if (!isAdmin) return;
+      try {
+        const [paramRes, exclusionRes] = await Promise.all([
+          api.get('/parameter-suggestions/stats'),
+          api.get('/exclusion-suggestions/stats'),
+        ]);
+        setPendingParamSuggestions(paramRes.data.data?.pending || 0);
+        setPendingExclusionSuggestions(exclusionRes.data.data?.pending || 0);
+      } catch (error) {
+        console.error('Failed to fetch pending suggestions count:', error);
+      }
+    };
+
+    fetchPendingSuggestionsCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchPendingSuggestionsCount, 30000);
+    return () => clearInterval(interval);
+  }, [isAdmin]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -132,6 +156,11 @@ const Layout: React.FC = () => {
             icon: <CheckCircle />,
             badge: readyReportsCount >= 1 ? readyReportsCount : undefined,
           },
+          {
+            title: 'My Requests',
+            path: '/nurse/my-requests',
+            icon: <InboxIcon />,
+          },
         ]
       : []),
     ...(isAdmin
@@ -155,11 +184,13 @@ const Layout: React.FC = () => {
             title: 'Parameter Master',
             path: '/admin/parameter-master',
             icon: <ParameterIcon />,
+            badge: pendingParamSuggestions >= 1 ? pendingParamSuggestions : undefined,
           },
           {
             title: 'Exclusion Master',
             path: '/admin/exclusion-master',
             icon: <ExclusionIcon />,
+            badge: pendingExclusionSuggestions >= 1 ? pendingExclusionSuggestions : undefined,
           },
           {
             title: 'Audit Logs',
@@ -321,14 +352,6 @@ const Layout: React.FC = () => {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {navItems.find((item) => item.path === location.pathname)?.title || 'Dashboard'}
           </Typography>
-
-          <Tooltip title="Notifications">
-            <IconButton color="inherit" sx={{ mr: 2 }}>
-              <Badge badgeContent={4} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
 
           <Tooltip title="Profile">
             <IconButton onClick={handleProfileMenuOpen} sx={{ p: 0 }}>

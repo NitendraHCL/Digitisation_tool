@@ -442,6 +442,40 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
     report.status = 'ready';
     report.processingError = null;
 
+    // ========================================
+    // INCOMPLETE PROCESSING DETECTION
+    // ========================================
+    const pdfPages = metadata.pdfPages || 0;
+    const pageWiseDataLength = extractedData.pageWiseData?.length || 0;
+
+    if (pdfPages > 0 && pageWiseDataLength < pdfPages) {
+      // Find which pages are missing
+      const processedPageNumbers = (extractedData.pageWiseData || []).map(p => p.pageNumber);
+      const allPageNumbers = Array.from({ length: pdfPages }, (_, i) => i + 1);
+      const failedPages = allPageNumbers.filter(p => !processedPageNumbers.includes(p));
+
+      report.processingIssues = {
+        hasIncompleteProcessing: true,
+        totalPages: pdfPages,
+        processedPages: pageWiseDataLength,
+        failedPages: failedPages,
+        message: `${pageWiseDataLength} of ${pdfPages} pages processed`
+      };
+      console.log('[PROCESS] ⚠️  INCOMPLETE PROCESSING DETECTED');
+      console.log('[PROCESS]    - Total pages:', pdfPages);
+      console.log('[PROCESS]    - Processed pages:', pageWiseDataLength);
+      console.log('[PROCESS]    - Failed pages:', failedPages.join(', '));
+    } else {
+      report.processingIssues = {
+        hasIncompleteProcessing: false,
+        totalPages: pdfPages,
+        processedPages: pageWiseDataLength,
+        failedPages: [],
+        message: null
+      };
+      console.log('[PROCESS] ✓ All pages processed successfully');
+    }
+
     // DEBUG: Pre-save validation - Check for NaN and invalid data types
     console.log('[PROCESS] 15. DEBUG - Pre-save data validation:');
     console.log('[PROCESS] 15a. - Report status:', report.status);
@@ -846,8 +880,65 @@ const getExtractedData = async (req, res) => {
   }
 };
 
+/**
+ * Reprocess a report (full reprocess - clear all data and process from scratch)
+ * Used when processing was incomplete or failed
+ */
+const reprocessReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('[REPROCESS] Starting reprocess for report:', id);
+
+    const report = await Report.findById(id);
+
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Report not found' });
+    }
+
+    // Only allow reprocess for reports with status: ready, error, or with processing issues
+    if (!['ready', 'error'].includes(report.status) && !report.processingIssues?.hasIncompleteProcessing) {
+      return res.status(400).json({
+        success: false,
+        message: 'Report cannot be reprocessed in current state'
+      });
+    }
+
+    console.log('[REPROCESS] Current status:', report.status);
+    console.log('[REPROCESS] Has incomplete processing:', report.processingIssues?.hasIncompleteProcessing);
+
+    // Clear existing data for fresh processing
+    report.status = 'uploaded';
+    report.extractedData = undefined;
+    report.processingMetadata = undefined;
+    report.processingIssues = undefined;
+    report.validationFlags = [];
+    report.flags = undefined;
+    report.uiIndicators = undefined;
+    report.processingError = undefined;
+    report.finalData = undefined;
+
+    await report.save();
+    console.log('[REPROCESS] Report data cleared, triggering fresh processing');
+
+    // Trigger fresh processing (don't await - let it run in background)
+    processReportInternal(report._id).catch(error => {
+      console.error('[REPROCESS] Background processing error:', error.message);
+    });
+
+    res.json({
+      success: true,
+      message: 'Report reprocessing started',
+      reportId: id
+    });
+  } catch (error) {
+    console.error('[REPROCESS] Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   processReport,
   processMultipleReports,
-  getExtractedData
+  getExtractedData,
+  reprocessReport
 };

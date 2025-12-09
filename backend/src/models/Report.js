@@ -464,6 +464,28 @@ const reportSchema = new mongoose.Schema({
       type: Number, // calculated as reviewDuration / totalParameters
       default: null
     }
+  },
+  // Processing issues detection for incomplete processing
+  processingIssues: {
+    hasIncompleteProcessing: {
+      type: Boolean,
+      default: false
+    },
+    totalPages: {
+      type: Number,
+      default: null
+    },
+    processedPages: {
+      type: Number,
+      default: null
+    },
+    failedPages: [{
+      type: Number
+    }],
+    message: {
+      type: String,
+      default: null
+    }
   }
 }, {
   timestamps: true

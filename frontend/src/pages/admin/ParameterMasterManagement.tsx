@@ -106,6 +106,7 @@ const ParameterMasterManagement: React.FC = () => {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsPage, setSuggestionsPage] = useState(1);
   const [suggestionsTotalPages, setSuggestionsTotalPages] = useState(1);
+  const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [suggestionStats, setSuggestionStats] = useState({
     pending: 0,
     approved: 0,
@@ -135,7 +136,7 @@ const ParameterMasterManagement: React.FC = () => {
       fetchSuggestions();
       fetchSuggestionStats();
     }
-  }, [activeTab, page, suggestionsPage, searchTerm, valueTypeFilter]);
+  }, [activeTab, page, suggestionsPage, searchTerm, valueTypeFilter, suggestionStatusFilter]);
 
   const fetchParameters = async () => {
     try {
@@ -243,7 +244,7 @@ const ParameterMasterManagement: React.FC = () => {
         params: {
           page: suggestionsPage,
           limit: 20,
-          status: 'pending' // Focus on pending suggestions for admin review
+          status: suggestionStatusFilter === 'all' ? undefined : suggestionStatusFilter
         }
       });
 
@@ -342,6 +343,23 @@ const ParameterMasterManagement: React.FC = () => {
       default:
         return 'default';
     }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'warning';
+      case 'approved':
+        return 'success';
+      case 'rejected':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   return (
@@ -570,6 +588,28 @@ const ParameterMasterManagement: React.FC = () => {
             </Paper>
           </Box>
 
+          {/* Status Filter */}
+          <Paper elevation={0} sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
+                Filter by Status:
+              </Typography>
+              {(['all', 'pending', 'approved', 'rejected'] as const).map((status) => (
+                <Chip
+                  key={status}
+                  label={status === 'all' ? 'All' : getStatusLabel(status)}
+                  onClick={() => {
+                    setSuggestionStatusFilter(status);
+                    setSuggestionsPage(1);
+                  }}
+                  color={suggestionStatusFilter === status ? (status === 'all' ? 'primary' : getStatusColor(status) as any) : 'default'}
+                  variant={suggestionStatusFilter === status ? 'filled' : 'outlined'}
+                  sx={{ cursor: 'pointer' }}
+                />
+              ))}
+            </Stack>
+          </Paper>
+
           {/* Suggestions Table */}
           <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
             {suggestionsLoading ? (
@@ -579,7 +619,7 @@ const ParameterMasterManagement: React.FC = () => {
             ) : suggestions.length === 0 ? (
               <Box sx={{ p: 4, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary">
-                  No pending suggestions
+                  {suggestionStatusFilter === 'all' ? 'No suggestions found' : `No ${suggestionStatusFilter} suggestions`}
                 </Typography>
               </Box>
             ) : (
@@ -602,6 +642,9 @@ const ParameterMasterManagement: React.FC = () => {
                         </TableCell>
                         <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
                           DATE
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
+                          STATUS
                         </TableCell>
                         <TableCell align="center" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
                           ACTIONS
@@ -666,15 +709,35 @@ const ParameterMasterManagement: React.FC = () => {
                               {new Date(suggestion.createdAt).toLocaleTimeString()}
                             </Typography>
                           </TableCell>
-                          <TableCell align="center">
-                            <Button
+                          <TableCell>
+                            <Chip
+                              label={getStatusLabel(suggestion.status)}
                               size="small"
-                              variant="outlined"
-                              onClick={() => handleReviewSuggestion(suggestion)}
-                              sx={{ textTransform: 'none' }}
-                            >
-                              Review
-                            </Button>
+                              color={getStatusColor(suggestion.status) as any}
+                            />
+                            {suggestion.reviewNotes && (
+                              <Tooltip title={suggestion.reviewNotes}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, cursor: 'help' }}>
+                                  {suggestion.reviewNotes.length > 30 ? suggestion.reviewNotes.substring(0, 30) + '...' : suggestion.reviewNotes}
+                                </Typography>
+                              </Tooltip>
+                            )}
+                          </TableCell>
+                          <TableCell align="center">
+                            {suggestion.status === 'pending' ? (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => handleReviewSuggestion(suggestion)}
+                                sx={{ textTransform: 'none' }}
+                              >
+                                Review
+                              </Button>
+                            ) : (
+                              <Typography variant="caption" color="text.secondary">
+                                {suggestion.reviewedBy?.name ? `By ${suggestion.reviewedBy.name}` : '-'}
+                              </Typography>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
