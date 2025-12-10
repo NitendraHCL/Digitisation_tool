@@ -51,6 +51,14 @@ import { useAuth } from '../../contexts/AuthContext';
 const drawerWidth = 280;
 const collapsedDrawerWidth = 70;
 
+// Habit Health brand colors
+const brandColors = {
+  navyBlue: '#1E4088',
+  navyBlueDark: '#162D5E',
+  orange: '#F7941D',
+  orangeLight: '#FDB347',
+};
+
 interface NavItem {
   title: string;
   path: string;
@@ -227,45 +235,27 @@ const Layout: React.FC = () => {
   const roleIcon = getRoleIcon();
 
   const drawer = (
-    <Box>
+    <Box sx={{ bgcolor: brandColors.navyBlue, minHeight: '100%', color: '#fff' }}>
       <Toolbar sx={{ px: 2, py: 3, justifyContent: desktopOpen || isMobile ? 'flex-start' : 'center' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: desktopOpen || isMobile ? 'flex-start' : 'center' }}>
-          <LabIcon sx={{ fontSize: 32, color: theme.palette.primary.main, mr: desktopOpen || isMobile ? 1 : 0 }} />
-          {(desktopOpen || isMobile) && (
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.primary.main }}>
-                Lab Digitizer
-              </Typography>
-              <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
-                Medical Report System
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      </Toolbar>
-      <Divider />
-
-      {(desktopOpen || isMobile) && (
-        <Box sx={{ p: 2 }}>
-          <Box sx={{ p: 2, bgcolor: theme.palette.grey[50], borderRadius: 2, mb: 2 }}>
-            <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
-              Logged in as
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5 }}>
-              {user?.name}
-            </Typography>
-            <Chip
-              label={user?.role.replace('_', ' ').toUpperCase()}
-              size="small"
-              color={getRoleColor() as any}
-              {...(roleIcon && { icon: roleIcon })}
-              sx={{ mt: 1 }}
-            />
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: desktopOpen || isMobile ? 'flex-start' : 'center', width: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <LabIcon sx={{ fontSize: 32, color: brandColors.orange, mr: desktopOpen || isMobile ? 1 : 0 }} />
+            {(desktopOpen || isMobile) && (
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: brandColors.orange }}>
+                  Lab Digitizer
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  Medical Report System
+                </Typography>
+              </Box>
+            )}
           </Box>
         </Box>
-      )}
+      </Toolbar>
+      <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
 
-      <List sx={{ px: 2 }}>
+      <List sx={{ px: 2, pt: 2 }}>
         {navItems.map((item) => (
           <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
             <Tooltip title={!desktopOpen && !isMobile ? item.title : ''} placement="right">
@@ -278,15 +268,22 @@ const Layout: React.FC = () => {
                 sx={{
                   borderRadius: 2,
                   justifyContent: desktopOpen || isMobile ? 'flex-start' : 'center',
+                  color: 'rgba(255,255,255,0.85)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                  },
                   '&.Mui-selected': {
-                    bgcolor: theme.palette.primary.main,
-                    color: '#fff',
+                    bgcolor: '#fff',
+                    color: brandColors.navyBlue,
                     '&:hover': {
-                      bgcolor: theme.palette.primary.dark,
+                      bgcolor: 'rgba(255,255,255,0.9)',
                     },
                     '& .MuiListItemIcon-root': {
-                      color: '#fff',
+                      color: brandColors.navyBlue,
                     },
+                  },
+                  '& .MuiListItemIcon-root': {
+                    color: 'rgba(255,255,255,0.85)',
                   },
                 }}
               >
@@ -306,6 +303,48 @@ const Layout: React.FC = () => {
         ))}
       </List>
 
+      {/* Powered by HCL Healthcare Card - only show when drawer is expanded */}
+      {(desktopOpen || isMobile) && (
+        <Box sx={{ px: 2, mt: 'auto', pt: 4, mb: !isMobile ? 8 : 2 }}>
+          <Box
+            sx={{
+              p: 2,
+              bgcolor: 'rgba(255,255,255,0.1)',
+              borderRadius: 2,
+              border: '1px solid rgba(255,255,255,0.15)',
+              textAlign: 'center',
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'rgba(255,255,255,0.85)',
+                display: 'block',
+                mb: 1.5,
+                fontWeight: 500,
+                fontSize: '14px',
+              }}
+            >
+              Powered by
+            </Typography>
+            <img
+              src="/hcl-healthcare-logo-white.png"
+              alt="HCL Healthcare"
+              style={{
+                width: '160px',
+                height: 'auto',
+                imageRendering: 'crisp-edges',
+                WebkitFontSmoothing: 'antialiased',
+                filter: 'contrast(1.1)',
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </Box>
+        </Box>
+      )}
+
       {!isMobile && (
         <Box sx={{ position: 'absolute', bottom: 16, left: 0, right: 0, px: 2 }}>
           <IconButton
@@ -313,9 +352,10 @@ const Layout: React.FC = () => {
             sx={{
               width: '100%',
               borderRadius: 2,
-              bgcolor: theme.palette.grey[100],
+              bgcolor: 'rgba(255,255,255,0.1)',
+              color: 'rgba(255,255,255,0.85)',
               '&:hover': {
-                bgcolor: theme.palette.grey[200],
+                bgcolor: 'rgba(255,255,255,0.2)',
               },
             }}
           >
@@ -332,10 +372,14 @@ const Layout: React.FC = () => {
       <AppBar
         position="fixed"
         sx={{
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` },
-          bgcolor: '#fff',
-          color: theme.palette.text.primary,
+          width: { md: `calc(100% - ${desktopOpen ? drawerWidth : collapsedDrawerWidth}px)` },
+          ml: { md: `${desktopOpen ? drawerWidth : collapsedDrawerWidth}px` },
+          bgcolor: brandColors.navyBlue,
+          color: '#fff',
+          transition: theme.transitions.create(['width', 'margin'], {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
         }}
       >
         <Toolbar>
@@ -349,13 +393,11 @@ const Layout: React.FC = () => {
             <MenuIcon />
           </IconButton>
 
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {navItems.find((item) => item.path === location.pathname)?.title || 'Dashboard'}
-          </Typography>
+          <Box sx={{ flexGrow: 1 }} />
 
           <Tooltip title="Profile">
             <IconButton onClick={handleProfileMenuOpen} sx={{ p: 0 }}>
-              <Avatar sx={{ bgcolor: theme.palette.primary.main }}>
+              <Avatar sx={{ bgcolor: brandColors.orange }}>
                 {user?.name?.charAt(0).toUpperCase()}
               </Avatar>
             </IconButton>

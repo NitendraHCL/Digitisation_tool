@@ -210,7 +210,7 @@ const AuditDashboard: React.FC = () => {
     <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5, color: '#111827' }}>
+        <Typography sx={{ fontSize: '32px', fontWeight: 700, mb: 0.5, color: '#111827' }}>
           Audit & Accuracy Dashboard
         </Typography>
         <Typography variant="body2" sx={{ color: '#6B7280', fontSize: '14px' }}>
@@ -222,7 +222,17 @@ const AuditDashboard: React.FC = () => {
       {summary && (
         <Grid container spacing={2.5} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{ border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <Card sx={{
+              background: 'linear-gradient(135deg, #4361EE08 0%, #4361EE04 50%, #ffffff 100%)',
+              boxShadow: '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #4361EE20',
+              borderRadius: 3,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)',
+                transform: 'translateY(-2px)',
+              },
+            }}>
               <CardContent sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                   <AssessmentIcon sx={{ mr: 1, color: '#4361EE', fontSize: 20 }} />
@@ -241,7 +251,17 @@ const AuditDashboard: React.FC = () => {
           </Grid>
 
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{ border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <Card sx={{
+              background: 'linear-gradient(135deg, #10B98108 0%, #10B98104 50%, #ffffff 100%)',
+              boxShadow: '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #10B98120',
+              borderRadius: 3,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)',
+                transform: 'translateY(-2px)',
+              },
+            }}>
               <CardContent sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                   <CheckIcon sx={{ mr: 1, color: '#10B981', fontSize: 20 }} />
@@ -260,7 +280,17 @@ const AuditDashboard: React.FC = () => {
           </Grid>
 
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{ border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <Card sx={{
+              background: 'linear-gradient(135deg, #F59E0B08 0%, #F59E0B04 50%, #ffffff 100%)',
+              boxShadow: '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #F59E0B20',
+              borderRadius: 3,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)',
+                transform: 'translateY(-2px)',
+              },
+            }}>
               <CardContent sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                   <EditIcon sx={{ mr: 1, color: '#F59E0B', fontSize: 20 }} />
@@ -279,7 +309,17 @@ const AuditDashboard: React.FC = () => {
           </Grid>
 
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{ border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <Card sx={{
+              background: 'linear-gradient(135deg, #8B5CF608 0%, #8B5CF604 50%, #ffffff 100%)',
+              boxShadow: '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #8B5CF620',
+              borderRadius: 3,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)',
+                transform: 'translateY(-2px)',
+              },
+            }}>
               <CardContent sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                   <TrendingUpIcon sx={{ mr: 1, color: '#8B5CF6', fontSize: 20 }} />

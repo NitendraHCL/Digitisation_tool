@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LinearProgress, CircularProgress, Tooltip } from '@mui/material';
+import { CloudUpload as UploadIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useSnackbar } from 'notistack';
@@ -322,9 +323,6 @@ const ReportsList: React.FC = () => {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: theme.colors.background,
-        padding: theme.spacing.lg,
         fontFamily: theme.typography.fontFamily,
       }}
     >
@@ -348,7 +346,7 @@ const ReportsList: React.FC = () => {
         >
           Pending Review
         </h1>
-        <CustomButton variant="primary" onClick={() => navigate('/nurse/upload')}>
+        <CustomButton variant="primary" onClick={() => navigate('/nurse/upload')} startIcon={<UploadIcon sx={{ fontSize: 20 }} />}>
           New Report
         </CustomButton>
       </div>

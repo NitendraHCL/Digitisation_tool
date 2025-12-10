@@ -277,7 +277,7 @@ const ConfigurationManagement: React.FC = () => {
     <Box sx={{ maxWidth: 1400 }}>
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5, color: '#111827' }}>
+        <Typography sx={{ fontSize: '32px', fontWeight: 700, mb: 0.5, color: '#111827' }}>
           System Configuration
         </Typography>
         <Typography variant="body2" sx={{ color: '#6B7280', fontSize: '14px' }}>

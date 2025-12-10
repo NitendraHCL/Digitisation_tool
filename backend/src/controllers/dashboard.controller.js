@@ -249,6 +249,7 @@ const getDashboardStats = async (req, res) => {
         processing: statusMap.processing || 0,
         ready: statusMap.ready || 0,
         approved: statusMap.approved || 0,
+        published: statusMap.published || 0,
         rejected: statusMap.rejected || 0,
         error: statusMap.error || 0
       },
@@ -495,6 +496,75 @@ const getPerformanceMetrics = async (req, res) => {
   }
 };
 
+// Get lab accuracy statistics
+const getLabAccuracyStats = async (req, res) => {
+  try {
+    console.log('[DASHBOARD CONTROLLER] Fetching lab accuracy statistics');
+
+    // Aggregate lab-wise accuracy statistics using weighted average formula
+    const labStats = await Report.aggregate([
+      {
+        $match: {
+          status: { $in: ['approved', 'rejected', 'published'] },
+          'extractedData.labName': { $exists: true, $ne: null },
+          'auditSummary.totalParameters': { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: '$extractedData.labName',
+          totalReports: { $sum: 1 },
+          totalParameters: { $sum: '$auditSummary.totalParameters' },
+          totalEditedParameters: { $sum: '$auditSummary.editedParameters' },
+          // Sum of (accuracy * totalParams) for weighted average
+          weightedAccuracySum: {
+            $sum: { $multiply: ['$auditSummary.accuracyPercentage', '$auditSummary.totalParameters'] }
+          },
+          // Processing time (time from upload to ready)
+          avgProcessingTime: { $avg: '$processingMetadata.totalProcessingTime' },
+          // Review duration (time spent reviewing)
+          avgReviewTime: { $avg: '$auditSummary.reviewDuration' }
+        }
+      },
+      {
+        $project: {
+          labName: '$_id',
+          totalReports: 1,
+          avgParameterCount: {
+            $round: [{ $divide: ['$totalParameters', '$totalReports'] }, 1]
+          },
+          avgProcessingTime: { $round: ['$avgProcessingTime', 1] },
+          avgReviewTime: { $round: ['$avgReviewTime', 0] },
+          // Weighted average accuracy = Σ(accuracy_i × params_i) / Σ(params_i)
+          avgAccuracyRate: {
+            $round: [
+              { $divide: ['$weightedAccuracySum', '$totalParameters'] },
+              1
+            ]
+          }
+        }
+      },
+      { $sort: { totalReports: -1 } }
+    ]);
+
+    console.log('[DASHBOARD CONTROLLER] Lab accuracy stats fetched:', labStats.length, 'labs');
+
+    res.json({
+      success: true,
+      message: 'Lab accuracy statistics fetched successfully',
+      data: labStats
+    });
+
+  } catch (error) {
+    console.error('[DASHBOARD CONTROLLER] Lab accuracy stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch lab accuracy statistics',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // Get system health
 const getSystemHealth = async (req, res) => {
   try {
@@ -574,5 +644,6 @@ module.exports = {
   getDashboardStats,
   getRecentActivity,
   getPerformanceMetrics,
-  getSystemHealth
+  getSystemHealth,
+  getLabAccuracyStats
 };

@@ -363,10 +363,10 @@ const ParameterMasterManagement: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700 }}>
+        <Typography sx={{ fontSize: '32px', fontWeight: 700 }}>
           Parameter Master
         </Typography>
         {activeTab === 0 && (

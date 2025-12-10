@@ -9,6 +9,7 @@ interface CustomButtonProps {
   disabled?: boolean;
   fullWidth?: boolean;
   loading?: boolean;
+  startIcon?: React.ReactNode;
 }
 
 const CustomButton: React.FC<CustomButtonProps> = ({
@@ -19,6 +20,7 @@ const CustomButton: React.FC<CustomButtonProps> = ({
   disabled = false,
   fullWidth = false,
   loading = false,
+  startIcon,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isActive, setIsActive] = useState(false);
@@ -100,7 +102,14 @@ const CustomButton: React.FC<CustomButtonProps> = ({
           ⏳
         </span>
       ) : (
-        children
+        <>
+          {startIcon && (
+            <span style={{ display: 'flex', alignItems: 'center', marginRight: '8px' }}>
+              {startIcon}
+            </span>
+          )}
+          {children}
+        </>
       )}
       <style>
         {`

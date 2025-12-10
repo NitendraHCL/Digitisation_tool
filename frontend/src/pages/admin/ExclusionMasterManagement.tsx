@@ -404,11 +404,11 @@ const ExclusionMasterManagement: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 600, color: '#111827' }}>
+          <Typography sx={{ fontSize: '32px', fontWeight: 700, color: '#111827' }}>
             Exclusion Master Management
           </Typography>
           <Typography variant="body2" sx={{ color: '#6B7280', mt: 1 }}>

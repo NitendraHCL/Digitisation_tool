@@ -73,8 +73,8 @@ class ExternalDbService {
       console.log('[EXTERNAL DB] Connecting to write DB:', this.writeDbName, '...');
       try {
         this.writeClient = new MongoClient(this.writeUri, {
-          serverSelectionTimeoutMS: 5000,
-          connectTimeoutMS: 5000
+          serverSelectionTimeoutMS: 30000,  // Increased to 30 seconds
+          connectTimeoutMS: 30000           // Increased to 30 seconds
         });
         await this.writeClient.connect();
         this.writeDb = this.writeClient.db(this.writeDbName);

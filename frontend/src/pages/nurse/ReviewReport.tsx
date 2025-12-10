@@ -37,6 +37,10 @@ import {
   Collapse,
   InputAdornment,
   Grid,
+  Select,
+  MenuItem,
+  FormControl,
+  SelectChangeEvent,
 } from '@mui/material';
 import { theme as appTheme } from '../../styles/theme';
 import {
@@ -203,6 +207,10 @@ const ReviewReport: React.FC = () => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  // Lab name dropdown state
+  const [configuredLabs, setConfiguredLabs] = useState<string[]>([]);
+  const [savingLabName, setSavingLabName] = useState(false);
+  const [editingLabName, setEditingLabName] = useState(false);
 
   // Timer helper functions
   const pauseTimer = () => {
@@ -275,6 +283,60 @@ const ReviewReport: React.FC = () => {
     console.log('[REVIEW] 1. Component mounted, report ID from URL:', id);
     fetchReport();
   }, [id]);
+
+  // Fetch configured lab names for dropdown
+  useEffect(() => {
+    const fetchConfiguredLabs = async () => {
+      try {
+        const response = await api.get('/reports/config/lab-names');
+        if (response.data.success && response.data.data) {
+          setConfiguredLabs(response.data.data);
+          console.log('[REVIEW] Loaded configured labs:', response.data.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch configured labs:', error);
+      }
+    };
+    fetchConfiguredLabs();
+  }, []);
+
+  // Handle lab name change
+  const handleLabNameChange = async (event: SelectChangeEvent<string>) => {
+    if (!report || !id) return;
+    const newLabName = event.target.value;
+    if (newLabName === report.extractedData?.labName) {
+      setEditingLabName(false);
+      return;
+    }
+    setSavingLabName(true);
+    try {
+      const response = await api.patch(`/reports/${id}`, {
+        extractedData: {
+          ...report.extractedData,
+          labName: newLabName
+        }
+      });
+      if (response.data.success) {
+        setReport((prev: Report | null) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            extractedData: {
+              ...prev.extractedData,
+              labName: newLabName
+            }
+          } as Report;
+        });
+        enqueueSnackbar('Laboratory updated successfully', { variant: 'success' });
+      }
+    } catch (error) {
+      console.error('Failed to update lab name:', error);
+      enqueueSnackbar('Failed to update laboratory', { variant: 'error' });
+    } finally {
+      setSavingLabName(false);
+      setEditingLabName(false);
+    }
+  };
 
   // Page Visibility API - pause timer when tab becomes inactive
   useEffect(() => {
@@ -1366,18 +1428,15 @@ const ReviewReport: React.FC = () => {
   // Otherwise show the split-view for review/editing
   return (
     <div style={{
-      minHeight: '100vh',
-      backgroundColor: appTheme.colors.background,
       fontFamily: appTheme.typography.fontFamily,
-      padding: `${appTheme.spacing.xl} ${appTheme.spacing['2xl']}`,
     }}>
       {/* Header */}
       <div style={{ marginBottom: appTheme.spacing.lg }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: appTheme.spacing.md }}>
           <div>
             <h1 style={{
-              fontSize: appTheme.typography.sizes.heading,
-              fontWeight: appTheme.typography.weights.semibold,
+              fontSize: '32px',
+              fontWeight: 700,
               color: appTheme.colors.textPrimary,
               margin: 0,
               marginBottom: appTheme.spacing.xs,
@@ -1499,7 +1558,7 @@ const ReviewReport: React.FC = () => {
             height: '100%',
             minHeight: 48,
             cursor: (report.orderId && report.status !== 'published') ? 'pointer' : 'default',
-            '&:hover': (report.orderId && report.status !== 'published') ? { bgcolor: '#F9FAFB' } : {}
+            '&:hover': (report.orderId && report.status !== 'published') ? { bgcolor: '#EEF2FF' } : {}
           }}
           onClick={() => {
             if (report.orderId && !editingOrderId && report.status !== 'published') {
@@ -1562,9 +1621,56 @@ const ReviewReport: React.FC = () => {
                 <LabIcon sx={{ mr: 0.5, color: '#8B5CF6', fontSize: 14 }} />
                 Laboratory
               </Typography>
-              <Typography sx={{ fontWeight: 500, color: '#111827', fontSize: '13px', lineHeight: 1.3 }}>
-                {report.extractedData?.labName || 'Unknown Lab'}
-              </Typography>
+              {report.status === 'published' || !editingLabName ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography sx={{ fontWeight: 500, color: '#111827', fontSize: '13px', lineHeight: 1.3 }}>
+                    {report.extractedData?.labName || 'Unknown Lab'}
+                  </Typography>
+                  {report.status !== 'published' && (
+                    <IconButton
+                      size="small"
+                      onClick={() => setEditingLabName(true)}
+                      sx={{
+                        p: 0.25,
+                        color: '#8B5CF6',
+                        '&:hover': { bgcolor: 'rgba(139, 92, 246, 0.1)' }
+                      }}
+                    >
+                      <EditIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  )}
+                </Box>
+              ) : (
+                <FormControl fullWidth size="small" disabled={savingLabName}>
+                  <Select
+                    value={report.extractedData?.labName || ''}
+                    onChange={handleLabNameChange}
+                    displayEmpty
+                    open={editingLabName}
+                    onClose={() => setEditingLabName(false)}
+                    sx={{
+                      fontWeight: 500,
+                      color: '#111827',
+                      fontSize: '13px',
+                      '& .MuiSelect-select': { py: 0.25, px: 0.5 },
+                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E5E7EB' },
+                      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#8B5CF6' },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B5CF6' }
+                    }}
+                  >
+                    {report.extractedData?.labName && !configuredLabs.includes(report.extractedData.labName) && (
+                      <MenuItem value={report.extractedData.labName}>
+                        {report.extractedData.labName} (Current)
+                      </MenuItem>
+                    )}
+                    {configuredLabs.map((labName) => (
+                      <MenuItem key={labName} value={labName}>
+                        {labName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
             </CardContent>
           </Card>
           </Tooltip>
@@ -1646,7 +1752,7 @@ const ReviewReport: React.FC = () => {
       </Grid>
 
       {/* Test Results Table */}
-      <Paper sx={{ p: 3, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+      <Paper sx={{ p: 3, borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', border: '1px solid #E5E7EB', bgcolor: 'white' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h6" sx={{ fontWeight: 600, color: '#111827' }}>
             Test Results
@@ -1701,13 +1807,13 @@ const ReviewReport: React.FC = () => {
         <TableContainer>
           <Table sx={{ minWidth: 650 }}>
             <TableHead>
-              <TableRow sx={{ backgroundColor: '#F9FAFB' }}>
+              <TableRow sx={{ bgcolor: 'grey.50' }}>
                 {columnOrder.map((columnName) => (
-                  <TableCell key={columnName} sx={{ fontWeight: 600, color: '#6B7280', fontSize: '13px', py: 2 }}>
+                  <TableCell key={columnName} sx={{ fontWeight: 600, color: '#111827', fontSize: '13px', py: 2, borderBottom: '1px solid #E5E7EB' }}>
                     {columnName}
                   </TableCell>
                 ))}
-                <TableCell sx={{ fontWeight: 600, color: '#6B7280', fontSize: '13px', py: 2, textAlign: 'right' }}>
+                <TableCell sx={{ fontWeight: 600, color: '#111827', fontSize: '13px', py: 2, textAlign: 'right', borderBottom: '1px solid #E5E7EB' }}>
                   Actions
                 </TableCell>
               </TableRow>

@@ -12,18 +12,27 @@ interface StatCardProps {
 const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, color }) => {
   const [isHovered, setIsHovered] = useState(false);
 
+  // Generate a subtle background gradient based on the card's color
+  const getBackgroundGradient = () => {
+    // Create a very light tint of the card's accent color
+    return `linear-gradient(135deg, ${color}08 0%, ${color}04 50%, #ffffff 100%)`;
+  };
+
   return (
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        backgroundColor: theme.colors.surface,
+        background: getBackgroundGradient(),
         borderRadius: theme.radius.lg,
         padding: theme.spacing.md,
-        boxShadow: isHovered ? theme.shadows.lg : theme.shadows.md,
+        boxShadow: isHovered
+          ? '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)'
+          : '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
         transition: theme.transitions.fast,
-        border: `1px solid ${theme.colors.border}`,
+        border: `1px solid ${color}20`,
         cursor: 'default',
+        transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
       }}
     >
       {/* Icon and Title Row */}

@@ -4,7 +4,8 @@ const {
   getDashboardStats,
   getRecentActivity,
   getPerformanceMetrics,
-  getSystemHealth
+  getSystemHealth,
+  getLabAccuracyStats
 } = require('../controllers/dashboard.controller');
 const { authenticate, isAdmin } = require('../middleware/auth.middleware');
 
@@ -23,6 +24,9 @@ router.get('/metrics', getPerformanceMetrics);
 
 // System health
 router.get('/health', getSystemHealth);
+
+// Lab accuracy statistics
+router.get('/lab-accuracy', getLabAccuracyStats);
 
 console.log('[DASHBOARD ROUTES] Routes loaded successfully');
 

@@ -128,7 +128,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl, currentPage = 1, totalPag
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          bgcolor: 'background.default',
+          bgcolor: 'grey.100',
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

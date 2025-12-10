@@ -242,9 +242,6 @@ const UploadReport: React.FC = () => {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: theme.colors.background,
-        padding: theme.spacing.lg,
         fontFamily: theme.typography.fontFamily,
       }}
     >

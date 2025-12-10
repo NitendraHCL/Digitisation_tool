@@ -317,7 +317,7 @@ const UserManagement: React.FC = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+          <Typography sx={{ fontSize: '32px', fontWeight: 700, mb: 1 }}>
             User Management
           </Typography>
           <Typography variant="body1" color="text.secondary">

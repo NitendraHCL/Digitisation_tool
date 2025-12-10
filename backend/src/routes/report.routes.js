@@ -19,6 +19,7 @@ const {
 } = require('../controllers/process.controller');
 const { authenticate, isNurseOrAdmin, isAdmin } = require('../middleware/auth.middleware');
 const { uploadPDF: uploadMiddleware, uploadMultiplePDFs: uploadMultipleMiddleware, handleUploadError } = require('../middleware/upload.middleware');
+const LabConfig = require('../models/LabConfig');
 
 // Debug logging
 console.log('[REPORT ROUTES] Loading report routes');
@@ -30,6 +31,27 @@ router.use(authenticate);
 router.post('/upload', isNurseOrAdmin, uploadMiddleware, handleUploadError, uploadPDF);
 router.post('/upload/multiple', isNurseOrAdmin, uploadMultipleMiddleware, handleUploadError, uploadMultiplePDFs);
 router.get('/', isNurseOrAdmin, getReports);
+
+// Get configured lab names (accessible to nurses and admins for lab name editing)
+// IMPORTANT: This must be BEFORE /:id routes to prevent "config" from being matched as an id
+router.get('/config/lab-names', isNurseOrAdmin, async (req, res) => {
+  try {
+    const config = await LabConfig.getConfig();
+    const labNames = config.labs.map(lab => lab.name);
+    console.log('[REPORT ROUTES] Returning lab names:', labNames);
+    res.json({
+      success: true,
+      data: labNames
+    });
+  } catch (error) {
+    console.error('[REPORT ROUTES] Get lab names error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch lab names'
+    });
+  }
+});
+
 router.get('/:id', isNurseOrAdmin, getReportById);
 router.get('/:id/pdf', isNurseOrAdmin, downloadPDF);
 router.patch('/:id', isNurseOrAdmin, updateReport);

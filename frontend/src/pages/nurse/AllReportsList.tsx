@@ -245,7 +245,7 @@ const AllReportsList: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: 0 }}>
+    <Box>
       {/* Modern Header */}
       <Box sx={{
         display: 'flex',
@@ -253,7 +253,7 @@ const AllReportsList: React.FC = () => {
         alignItems: 'center',
         mb: 4
       }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary' }}>
+        <Typography sx={{ fontSize: '32px', fontWeight: 700, color: 'text.primary' }}>
           Reports
         </Typography>
         <Button

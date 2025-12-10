@@ -35,30 +35,6 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleDemoLogin = async (role: 'admin' | 'nurse') => {
-    const credentials = {
-      admin: { email: 'admin@labdigital.com', password: 'Admin@123' },
-      nurse: { email: 'nurse1@hospital.com', password: 'Nurse@123' },
-    };
-
-    const creds = credentials[role];
-    setEmail(creds.email);
-    setPassword(creds.password);
-    setError('');
-    setLoading(true);
-
-    try {
-      await login(creds);
-      enqueueSnackbar('Login successful!', { variant: 'success' });
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
-      enqueueSnackbar(err.message || 'Login failed', { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div
       style={{
@@ -71,7 +47,16 @@ const Login: React.FC = () => {
         padding: `${theme.spacing['3xl']} ${theme.spacing.md}`,
       }}
     >
-      {/* Logo */}
+      {/* HCL Healthcare Logo */}
+      <div style={{ marginBottom: theme.spacing.md }}>
+        <img
+          src="/hcl-healthcare-logo.png"
+          alt="HCL Healthcare"
+          style={{ width: '280px', height: 'auto' }}
+        />
+      </div>
+
+      {/* Lab Digitizer Logo */}
       <div style={{ marginBottom: theme.spacing.xl }}>
         <Logo size="medium" centered />
       </div>
@@ -226,63 +211,6 @@ const Login: React.FC = () => {
             {loading ? 'Signing in...' : 'Sign In'}
           </CustomButton>
         </form>
-
-        {/* Divider */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            margin: `${theme.spacing.lg} 0`,
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              height: '1px',
-              backgroundColor: theme.colors.divider,
-            }}
-          />
-          <span
-            style={{
-              padding: `0 ${theme.spacing.sm}`,
-              fontSize: theme.typography.sizes.small,
-              color: theme.colors.textSecondary,
-            }}
-          >
-            Quick Demo Access
-          </span>
-          <div
-            style={{
-              flex: 1,
-              height: '1px',
-              backgroundColor: theme.colors.divider,
-            }}
-          />
-        </div>
-
-        {/* Demo Buttons */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <CustomButton
-            variant="secondary"
-            onClick={() => handleDemoLogin('admin')}
-            disabled={loading}
-          >
-            Admin Demo
-          </CustomButton>
-          <CustomButton
-            variant="secondary"
-            onClick={() => handleDemoLogin('nurse')}
-            disabled={loading}
-          >
-            Nurse Demo
-          </CustomButton>
-        </div>
       </div>
 
       {/* Footer */}

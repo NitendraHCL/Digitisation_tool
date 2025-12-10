@@ -317,14 +317,15 @@ const downloadPDF = async (req, res) => {
   }
 };
 
-// Update report (for processing time, etc.)
+// Update report (for processing time, extractedData, etc.)
 const updateReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { processingTime } = req.body;
+    const { processingTime, extractedData } = req.body;
 
     console.log('[REPORT CONTROLLER] Update request for report:', id);
     console.log('[REPORT CONTROLLER] Processing time:', processingTime);
+    console.log('[REPORT CONTROLLER] ExtractedData update:', extractedData ? 'yes' : 'no');
 
     const report = await Report.findById(id);
 
@@ -332,6 +333,14 @@ const updateReport = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Report not found'
+      });
+    }
+
+    // Check if report is published - cannot modify published reports
+    if (report.status === 'published') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot modify published reports'
       });
     }
 
@@ -347,6 +356,19 @@ const updateReport = async (req, res) => {
     if (processingTime !== undefined) {
       report.processingTime = processingTime;
       console.log('[REPORT CONTROLLER] Updated processing time to:', processingTime, 'seconds');
+    }
+
+    // Update extractedData if provided (e.g., labName update)
+    if (extractedData !== undefined) {
+      // Merge the provided extractedData with existing data
+      report.extractedData = {
+        ...report.extractedData,
+        ...extractedData
+      };
+      // IMPORTANT: Tell Mongoose the nested object was modified
+      // Without this, Mongoose doesn't detect the change and save() does nothing
+      report.markModified('extractedData');
+      console.log('[REPORT CONTROLLER] Updated extractedData, labName:', extractedData.labName || 'not changed');
     }
 
     await report.save();

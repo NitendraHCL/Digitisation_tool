@@ -73,6 +73,7 @@ interface DashboardStats {
     processing: number;
     ready: number;
     approved: number;
+    published: number;
     rejected: number;
     error: number;
   };
@@ -103,12 +104,22 @@ interface DashboardStats {
   };
 }
 
+interface LabAccuracyStat {
+  labName: string;
+  totalReports: number;
+  avgParameterCount: number;
+  avgProcessingTime: number;
+  avgReviewTime: number;
+  avgAccuracyRate: number;
+}
+
 const AdminDashboard: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [labAccuracyStats, setLabAccuracyStats] = useState<LabAccuracyStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('7days');
   const [refreshing, setRefreshing] = useState(false);
@@ -130,14 +141,19 @@ const AdminDashboard: React.FC = () => {
       };
       const backendRange = rangeMap[timeRange] || 'week';
 
-      // Fetch stats and metrics in parallel
-      const [statsResponse, metricsResponse] = await Promise.all([
+      // Fetch stats, metrics, and lab accuracy in parallel
+      const [statsResponse, metricsResponse, labAccuracyResponse] = await Promise.all([
         api.get(`/dashboard/stats?range=${backendRange}`),
-        api.get('/dashboard/metrics?days=7')
+        api.get('/dashboard/metrics?days=7'),
+        api.get('/dashboard/lab-accuracy')
       ]);
 
       const statsData = statsResponse.data.data;
       const metricsData = metricsResponse.data.data;
+      const labAccuracyData = labAccuracyResponse.data.data || [];
+
+      // Set lab accuracy stats
+      setLabAccuracyStats(labAccuracyData);
 
       // Map backend data to frontend interface
       const dashboardStats: DashboardStats = {
@@ -150,6 +166,7 @@ const AdminDashboard: React.FC = () => {
           processing: statsData.status.processing,
           ready: statsData.status.ready,
           approved: statsData.status.approved,
+          published: statsData.status.published,
           rejected: statsData.status.rejected,
           error: statsData.status.error,
         },
@@ -260,6 +277,7 @@ const AdminDashboard: React.FC = () => {
     processing: 'Processing',
     ready: 'Ready for Review',
     approved: 'Approved',
+    published: 'Published',
     rejected: 'Rejected',
     error: 'Error',
   };
@@ -269,6 +287,7 @@ const AdminDashboard: React.FC = () => {
     processing: theme.palette.info.main,
     ready: theme.palette.warning.main,
     approved: theme.palette.success.main,
+    published: '#64B5F6', // Light blue
     rejected: theme.palette.error.main,
     error: theme.palette.grey[600],
   };
@@ -289,7 +308,7 @@ const AdminDashboard: React.FC = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+          <Typography sx={{ fontSize: '32px', fontWeight: 700, mb: 1 }}>
             Admin Dashboard
           </Typography>
           <Typography variant="body1" color="text.secondary">
@@ -321,7 +340,19 @@ const AdminDashboard: React.FC = () => {
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {statCards.map((stat, index) => (
           <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
-            <Card>
+            <Card
+              sx={{
+                background: `linear-gradient(135deg, ${stat.color}08 0%, ${stat.color}04 50%, #ffffff 100%)`,
+                boxShadow: '0 6px 20px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.08)',
+                border: `1px solid ${stat.color}20`,
+                borderRadius: 1,
+                transition: 'all 0.2s ease-in-out',
+                '&:hover': {
+                  boxShadow: '0 12px 28px -8px rgba(0, 0, 0, 0.18), 0 8px 16px -8px rgba(0, 0, 0, 0.12)',
+                  transform: 'translateY(-2px)',
+                },
+              }}
+            >
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box>
@@ -347,7 +378,7 @@ const AdminDashboard: React.FC = () => {
                       </Typography>
                     </Box>
                   </Box>
-                  <Avatar sx={{ bgcolor: `${stat.color}20`, color: stat.color, width: 56, height: 56 }}>
+                  <Avatar sx={{ bgcolor: `${stat.color}15`, color: stat.color, width: 56, height: 56 }}>
                     {stat.icon}
                   </Avatar>
                 </Box>
@@ -360,12 +391,29 @@ const AdminDashboard: React.FC = () => {
       {/* Charts Row 1 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid size={{ xs: 12, md: 7 }}>
-          <Paper sx={{ p: 3, height: 400 }}>
+          <Paper sx={{
+            p: 3,
+            height: 400,
+            boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 2px 8px -4px rgba(0, 0, 0, 0.06)',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
               Report Activity Trend
             </Typography>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={stats?.recentActivity}>
+                <defs>
+                  <linearGradient id="totalReportsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4A6EB5" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#4A6EB5" stopOpacity={0.08}/>
+                  </linearGradient>
+                  <linearGradient id="approvedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.08}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
                 <XAxis dataKey="date" stroke={theme.palette.text.secondary} />
                 <YAxis stroke={theme.palette.text.secondary} />
@@ -376,16 +424,18 @@ const AdminDashboard: React.FC = () => {
                   dataKey="total"
                   name="Total Reports"
                   stackId="1"
-                  stroke={theme.palette.primary.main}
-                  fill={theme.palette.primary.light}
+                  stroke="#3A5A9F"
+                  strokeWidth={2}
+                  fill="url(#totalReportsGradient)"
                 />
                 <Area
                   type="monotone"
                   dataKey="approved"
                   name="Approved"
                   stackId="2"
-                  stroke={theme.palette.success.main}
-                  fill={theme.palette.success.light}
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  fill="url(#approvedGradient)"
                 />
                 <Area
                   type="monotone"
@@ -400,155 +450,162 @@ const AdminDashboard: React.FC = () => {
           </Paper>
         </Grid>
         <Grid size={{ xs: 12, md: 5 }}>
-          <Paper sx={{ p: 3, height: 400 }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+          <Paper sx={{
+            p: 3,
+            height: 400,
+            boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 2px 8px -4px rgba(0, 0, 0, 0.06)',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}>
+            <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
               Report Status Distribution
             </Typography>
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry) => `${entry.name}: ${entry.value}`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
-                  ))}
-                </Pie>
-                <ChartTooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: 340 }}>
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      innerRadius={55}
+                      outerRadius={95}
+                      fill="#8884d8"
+                      dataKey="value"
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
+              <Box sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                gap: 1.5,
+                pt: 1,
+              }}>
+                {pieData.map((entry, index) => (
+                  <Box
+                    key={entry.key}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        backgroundColor: pieColors[index],
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '12px',
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
+                      {entry.name}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: theme.palette.text.primary,
+                      }}
+                    >
+                      ({entry.value})
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           </Paper>
         </Grid>
       </Grid>
 
-      {/* Lab Distribution Chart */}
+      {/* Lab Distribution - Horizontal Bar Chart */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12 }}>
-          <Paper sx={{ p: 3 }}>
-            {/* Header with Stats Summary */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                  Lab Distribution
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Reports processed by laboratory
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', gap: 3 }}>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Total Labs
-                  </Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
-                    {stats?.labDistribution.length || 0}
-                  </Typography>
-                </Box>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Total Reports
-                  </Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.success.main }}>
-                    {stats?.labDistribution.reduce((sum, lab) => sum + lab.count, 0) || 0}
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-
-            {/* Bar Chart */}
-            <ResponsiveContainer width="100%" height={Math.max(400, (stats?.labDistribution.length || 0) * 60)}>
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Paper sx={{
+            p: 3,
+            height: 400,
+            boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 2px 8px -4px rgba(0, 0, 0, 0.06)',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+              Lab Distribution
+            </Typography>
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart
-                data={stats?.labDistribution.slice().sort((a, b) => b.count - a.count)}
+                data={stats?.labDistribution.slice().sort((a, b) => b.count - a.count).slice(0, 6)}
                 layout="vertical"
-                margin={{ top: 10, right: 80, left: 150, bottom: 10 }}
+                margin={{ top: 10, right: 30, left: 100, bottom: 10 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} horizontal={true} vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} horizontal={false} />
                 <XAxis type="number" stroke={theme.palette.text.secondary} />
                 <YAxis
-                  type="category"
                   dataKey="name"
+                  type="category"
                   stroke={theme.palette.text.secondary}
-                  width={140}
-                  tick={{ fontSize: 13 }}
+                  tick={{ fontSize: 12 }}
+                  width={90}
                 />
                 <ChartTooltip
                   contentStyle={{
                     backgroundColor: theme.palette.background.paper,
                     border: `1px solid ${theme.palette.divider}`,
                     borderRadius: 8,
-                    padding: '12px',
                   }}
-                  formatter={(value: any, name: string, props: any) => {
-                    if (!props?.payload || typeof props.payload.percentage !== 'number') {
-                      return [value, name];
-                    }
-                    return [
-                      `${value} reports (${props.payload.percentage.toFixed(1)}%)`,
-                      props.payload.name,
-                    ];
-                  }}
+                  formatter={(value: any, name: string, props: any) => [
+                    `${value} reports (${props?.payload?.percentage?.toFixed(1) || 0}%)`,
+                    'Count'
+                  ]}
                 />
-                <Bar
-                  dataKey="count"
-                  radius={[0, 8, 8, 0]}
-                  label={(props: any) => {
-                    const { x, y, width, value, payload } = props;
-                    if (!payload || typeof payload.percentage !== 'number') return null;
-                    return (
-                      <text
-                        x={x + width + 10}
-                        y={y + 15}
-                        fill={theme.palette.text.primary}
-                        fontSize={12}
-                        fontWeight={600}
-                      >
-                        {`${value} (${payload.percentage.toFixed(1)}%)`}
-                      </text>
-                    );
-                  }}
-                >
-                  {stats?.labDistribution.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={entry.color}
-                      style={{
-                        filter: 'brightness(1.1)',
-                        transition: 'all 0.3s ease',
-                      }}
-                    />
-                  ))}
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                  {(() => {
+                    const sortedData = stats?.labDistribution.slice().sort((a, b) => b.count - a.count).slice(0, 6) || [];
+                    const maxCount = sortedData.length > 0 ? sortedData[0].count : 1;
+                    return sortedData.map((entry, index) => {
+                      // Calculate opacity based on count (higher count = more opaque)
+                      const opacity = 0.4 + (entry.count / maxCount) * 0.6;
+                      return (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={`rgba(180, 134, 95, ${opacity})`}
+                        />
+                      );
+                    });
+                  })()}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-
-            {/* Top Lab Indicator */}
-            {stats?.labDistribution && stats.labDistribution.length > 0 && (
-              <Box sx={{ mt: 2, p: 2, bgcolor: theme.palette.primary.main + '10', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <LabIcon sx={{ color: theme.palette.primary.main }} />
-                <Typography variant="body2" color="text.secondary">
-                  <strong style={{ color: theme.palette.primary.main }}>
-                    {stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].name}
-                  </strong>
-                  {' '}is the most active lab with{' '}
-                  <strong>
-                    {stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].count} reports
-                  </strong>
-                  {' '}({stats.labDistribution.slice().sort((a, b) => b.count - a.count)[0].percentage.toFixed(1)}% of total)
-                </Typography>
-              </Box>
-            )}
           </Paper>
         </Grid>
       </Grid>
 
       {/* Top Users Table */}
-      <Paper sx={{ p: 3 }}>
+      <Paper sx={{
+        p: 3,
+        boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 2px 8px -4px rgba(0, 0, 0, 0.06)',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
             Top Performing Users
@@ -610,6 +667,88 @@ const AdminDashboard: React.FC = () => {
                   </TableRow>
                 );
               })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {/* Lab Accuracy Rate Table */}
+      <Paper sx={{
+        p: 3,
+        mt: 4,
+        boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 2px 8px -4px rgba(0, 0, 0, 0.06)',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}>
+        <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+          Lab Accuracy Rate
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Includes only reports with Approved, Rejected, or Published status
+        </Typography>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Lab Name</TableCell>
+                <TableCell align="right">Total Reports Uploaded</TableCell>
+                <TableCell align="right">Avg Parameter Count</TableCell>
+                <TableCell align="right">Avg Processing Time</TableCell>
+                <TableCell align="right">Avg Review Time</TableCell>
+                <TableCell align="right">Avg Accuracy Rate</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {labAccuracyStats.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                    <Typography color="text.secondary">
+                      No lab accuracy data available
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                labAccuracyStats.map((lab, index) => {
+                  // Color-code accuracy rate
+                  let accuracyColor = theme.palette.error.main; // Red for < 70%
+                  if (lab.avgAccuracyRate >= 90) {
+                    accuracyColor = theme.palette.success.main; // Green for >= 90%
+                  } else if (lab.avgAccuracyRate >= 70) {
+                    accuracyColor = theme.palette.warning.main; // Yellow for >= 70%
+                  }
+
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Avatar sx={{ width: 32, height: 32, bgcolor: theme.palette.secondary.main }}>
+                            <LabIcon sx={{ fontSize: 18 }} />
+                          </Avatar>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {lab.labName || 'Unknown Lab'}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">{lab.totalReports}</TableCell>
+                      <TableCell align="right">{lab.avgParameterCount}</TableCell>
+                      <TableCell align="right">{lab.avgProcessingTime}s</TableCell>
+                      <TableCell align="right">{lab.avgReviewTime}s</TableCell>
+                      <TableCell align="right">
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 600,
+                            color: accuracyColor,
+                          }}
+                        >
+                          {lab.avgAccuracyRate}%
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </TableContainer>

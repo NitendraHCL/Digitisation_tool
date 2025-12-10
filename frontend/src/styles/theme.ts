@@ -15,10 +15,16 @@ export const theme = {
     textSecondary: '#666666',  // Muted gray
     textTertiary: '#999999',   // Light gray
 
-    // Accent - Strategic Use Only
-    accent: '#2D5BFF',         // Modern blue
-    accentHover: '#1E40CC',    // Darker on hover
-    accentLight: '#F8F9FF',    // Very light blue for hover backgrounds
+    // Brand Colors - Habit Health
+    brandNavy: '#1E4088',      // Navy blue - primary brand
+    brandNavyDark: '#162D5E',  // Darker navy
+    brandOrange: '#F7941D',    // Orange - accent/CTA
+    brandOrangeLight: '#FDB347', // Lighter orange for hover
+
+    // Accent - Strategic Use Only (updated to brand colors)
+    accent: '#F7941D',         // Orange for CTAs
+    accentHover: '#E08015',    // Darker orange on hover
+    accentLight: '#FFF8F0',    // Very light orange for hover backgrounds
 
     // Semantic Colors
     success: '#00B884',        // Mint green
@@ -29,7 +35,7 @@ export const theme = {
     // Borders & Dividers
     border: '#E5E5E5',         // Subtle borders
     borderHover: '#CCCCCC',    // Hover state
-    borderFocus: '#2D5BFF',    // Accent on focus
+    borderFocus: '#F7941D',    // Orange accent on focus
     divider: '#F0F0F0',        // Divider lines
   },
 
@@ -99,10 +105,10 @@ export const theme = {
     xl: '0 8px 24px rgba(0, 0, 0, 0.1)',
 
     // Focus shadow for inputs
-    focus: '0 0 0 3px rgba(45, 91, 255, 0.1)',
+    focus: '0 0 0 3px rgba(247, 148, 29, 0.15)',
 
     // Button hover shadow
-    button: '0 4px 12px rgba(45, 91, 255, 0.2)',
+    button: '0 4px 12px rgba(247, 148, 29, 0.25)',
   },
 
   // Transitions
