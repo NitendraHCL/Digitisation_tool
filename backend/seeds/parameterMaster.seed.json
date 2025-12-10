@@ -1,0 +1,926 @@
+[
+  {
+    "parameterId": "PLPG",
+    "parameterName": "Post Lunch Plasma Glucose",
+    "aliases": [
+      "Post Lunch Plasma Glucose"
+    ],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "BLOOD_UREA",
+    "parameterName": "Blood Urea",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "BLOOD_UREA_NITROGEN",
+    "parameterName": "Blood Urea Nitrogen",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "CALCIUM,_SERUM",
+    "parameterName": "Calcium, Serum",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "CREATININE,_SERUM",
+    "parameterName": "Creatinine, Serum",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "HS-CRP",
+    "parameterName": "hs-CRP",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PHOSPHOROUS,_SERUM",
+    "parameterName": "Phosphorous, Serum",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "IRON",
+    "parameterName": "Iron",
+    "aliases": [],
+    "possibleUnits": [
+      "µg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_IRON_BINDING_CAPACITY_TIBC",
+    "parameterName": "Total Iron Binding Capacity (TIBC)",
+    "aliases": [],
+    "possibleUnits": [
+      "µg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "UNSATURATED_IRON_BINDING_CAPACITY_UIBC",
+    "parameterName": "Unsaturated Iron Binding Capacity (UIBC)",
+    "aliases": [],
+    "possibleUnits": [
+      "µg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TRANSFERRIN_SATURATION",
+    "parameterName": "Transferrin Saturation",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "URIC_ACID",
+    "parameterName": "Uric Acid",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "VITAMIN_B12_CYANOCOBALAMINE,_SERUM",
+    "parameterName": "Vitamin B12 (Cyanocobalamine), Serum",
+    "aliases": [],
+    "possibleUnits": [
+      "pg/mL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_CHOLESTEROL",
+    "parameterName": "Total Cholesterol",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "HDL_CHOLESTEROL",
+    "parameterName": "HDL Cholesterol",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "LDL_CHOLESTEROL",
+    "parameterName": "LDL Cholesterol",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "VLDL",
+    "parameterName": "VLDL",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TRIGLYCERIDES",
+    "parameterName": "Triglycerides",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "CHOL_/_HDL_RATIO",
+    "parameterName": "CHOL / HDL Ratio",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "NON_-_HDL_CHOLESTEROL",
+    "parameterName": "Non - HDL Cholesterol",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "LDL/HDL_RATIO",
+    "parameterName": "LDL/HDL Ratio",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_T3",
+    "parameterName": "Total T3",
+    "aliases": [],
+    "possibleUnits": [
+      "ng/mL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_T4",
+    "parameterName": "Total T4",
+    "aliases": [],
+    "possibleUnits": [
+      "µg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TSH",
+    "parameterName": "TSH",
+    "aliases": [],
+    "possibleUnits": [
+      "µIU/mL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_BILIRUBIN",
+    "parameterName": "Total Bilirubin",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "DIRECT_BILIRUBIN",
+    "parameterName": "Direct Bilirubin",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "INDIRECT_BILIRUBIN",
+    "parameterName": "Indirect Bilirubin",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "SGPT_/_ALT",
+    "parameterName": "SGPT / ALT",
+    "aliases": [],
+    "possibleUnits": [
+      "U/L"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "AST_/_SGOT",
+    "parameterName": "AST / SGOT",
+    "aliases": [],
+    "possibleUnits": [
+      "U/L"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "ALKALINE_PHOSPHATASE",
+    "parameterName": "Alkaline Phosphatase",
+    "aliases": [],
+    "possibleUnits": [
+      "IU/L"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_PROTEIN_TP",
+    "parameterName": "Total Protein (TP)",
+    "aliases": [],
+    "possibleUnits": [
+      "g/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "ALBUMIN",
+    "parameterName": "Albumin",
+    "aliases": [],
+    "possibleUnits": [
+      "g/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "GLOBULIN",
+    "parameterName": "Globulin",
+    "aliases": [],
+    "possibleUnits": [
+      "g/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "A/G_RATIO",
+    "parameterName": "A/G Ratio",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "GLYCOSYLATED_HB_HBA1C",
+    "parameterName": "Glycosylated Hb (HbA1C)",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "ESTIMATED_AVERAGE_GLUCOSE",
+    "parameterName": "Estimated Average Glucose",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "COLOUR",
+    "parameterName": "Colour",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "APPEARANCE",
+    "parameterName": "Appearance",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "REACTION_PH",
+    "parameterName": "Reaction (pH)",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "SPECIFIC_GRAVITY",
+    "parameterName": "Specific Gravity",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PROTEIN_/_ALBUMIN",
+    "parameterName": "Protein / Albumin",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "GLUCOSE_/_SUGAR",
+    "parameterName": "Glucose / Sugar",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "BLOOD",
+    "parameterName": "Blood",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "KETONES",
+    "parameterName": "Ketones",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "BILIRUBIN",
+    "parameterName": "Bilirubin",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "LEUCOCYTES",
+    "parameterName": "Leucocytes",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "NITRITES",
+    "parameterName": "Nitrites",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "UROBILINOGEN",
+    "parameterName": "Urobilinogen",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PUS_CELLS",
+    "parameterName": "Pus Cells",
+    "aliases": [],
+    "possibleUnits": [
+      "/HPF"
+    ],
+    "valueType": "range",
+    "description": ""
+  },
+  {
+    "parameterId": "EPITHELIAL_CELLS",
+    "parameterName": "Epithelial Cells",
+    "aliases": [],
+    "possibleUnits": [
+      "/HPF"
+    ],
+    "valueType": "range",
+    "description": ""
+  },
+  {
+    "parameterId": "RBC",
+    "parameterName": "RBC",
+    "aliases": [],
+    "possibleUnits": [
+      "/HPF"
+    ],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "CASTS",
+    "parameterName": "Casts",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "CRYSTALS_/_AMORPHOUS_DEPOSIT",
+    "parameterName": "Crystals / Amorphous deposit",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "OTHERS",
+    "parameterName": "Others",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "HEMOGLOBIN",
+    "parameterName": "Hemoglobin",
+    "aliases": [],
+    "possibleUnits": [
+      "g/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "HCT/HAEMATOCRIT",
+    "parameterName": "HCT/Haematocrit",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "RBC_COUNT",
+    "parameterName": "RBC Count",
+    "aliases": [],
+    "possibleUnits": [
+      "millions/cumm"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "MCV",
+    "parameterName": "MCV",
+    "aliases": [],
+    "possibleUnits": [
+      "fL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "MCH",
+    "parameterName": "MCH",
+    "aliases": [],
+    "possibleUnits": [
+      "pg"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "MCHC",
+    "parameterName": "MCHC",
+    "aliases": [],
+    "possibleUnits": [
+      "g/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "RDW-CV",
+    "parameterName": "RDW-CV",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "RDW-SD",
+    "parameterName": "RDW-SD",
+    "aliases": [],
+    "possibleUnits": [
+      "fL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "MPV",
+    "parameterName": "MPV",
+    "aliases": [],
+    "possibleUnits": [
+      "fL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PLATELET_COUNT",
+    "parameterName": "Platelet Count",
+    "aliases": [],
+    "possibleUnits": [
+      "lakhs/cmm"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "TOTAL_WBC_COUNT",
+    "parameterName": "Total WBC Count",
+    "aliases": [],
+    "possibleUnits": [
+      "Cells/cmm"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "NEUTROPHILS",
+    "parameterName": "Neutrophils",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "LYMPHOCYTES",
+    "parameterName": "Lymphocytes",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "MONOCYTES",
+    "parameterName": "Monocytes",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "EOSINOPHILS",
+    "parameterName": "Eosinophils",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "BASOPHILS",
+    "parameterName": "Basophils",
+    "aliases": [],
+    "possibleUnits": [
+      "%"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "E.S.R_1ST_HOUR",
+    "parameterName": "E.S.R 1st HOUR",
+    "aliases": [],
+    "possibleUnits": [
+      "mm/hr"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "25_HYDROXY_VITAMIN_D.",
+    "parameterName": "25 Hydroxy Vitamin D.",
+    "aliases": [],
+    "possibleUnits": [
+      "ng/mL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "FASTING_PLASMA_GLUCOSE",
+    "parameterName": "Fasting Plasma Glucose",
+    "aliases": [],
+    "possibleUnits": [
+      "mg/dL"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "WEIGHT",
+    "parameterName": "Weight",
+    "aliases": [],
+    "possibleUnits": [
+      "kg"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "HEIGHT",
+    "parameterName": "Height",
+    "aliases": [],
+    "possibleUnits": [
+      "cm"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "BP",
+    "parameterName": "BP",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "HR",
+    "parameterName": "HR",
+    "aliases": [],
+    "possibleUnits": [
+      "bpm"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "P",
+    "parameterName": "P",
+    "aliases": [],
+    "possibleUnits": [
+      "ms"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PR",
+    "parameterName": "PR",
+    "aliases": [],
+    "possibleUnits": [
+      "ms"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "QRS",
+    "parameterName": "QRS",
+    "aliases": [],
+    "possibleUnits": [
+      "ms"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "QT/QTCBZ",
+    "parameterName": "QT/QTcBz",
+    "aliases": [],
+    "possibleUnits": [
+      "ms"
+    ],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "PQRST",
+    "parameterName": "PQRST",
+    "aliases": [],
+    "possibleUnits": [
+      "°"
+    ],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "RV5/SV1",
+    "parameterName": "RV5/SV1",
+    "aliases": [],
+    "possibleUnits": [
+      "mV"
+    ],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "LIVER",
+    "parameterName": "LIVER",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PORTAL_VEIN",
+    "parameterName": "PORTAL VEIN",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "CBD",
+    "parameterName": "CBD",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "GALL_BLADDER",
+    "parameterName": "GALL BLADDER",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "SPLEEN",
+    "parameterName": "SPLEEN",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PANCREAS",
+    "parameterName": "PANCREAS",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "AORTA_&_IVC",
+    "parameterName": "AORTA & IVC",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "KIDNEYS",
+    "parameterName": "KIDNEYS",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "RIGHT_KIDNEY_MEASURES",
+    "parameterName": "Right Kidney measures",
+    "aliases": [],
+    "possibleUnits": [
+      "cms"
+    ],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "LEFT_KIDNEY_MEASURES",
+    "parameterName": "Left Kidney measures",
+    "aliases": [],
+    "possibleUnits": [
+      "cms"
+    ],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "URINARY_BLADDER",
+    "parameterName": "URINARY BLADDER",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "PROSTATE",
+    "parameterName": "PROSTATE",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  },
+  {
+    "parameterId": "PROSTATE_MEASURING",
+    "parameterName": "Prostate measuring",
+    "aliases": [],
+    "possibleUnits": [
+      "cms"
+    ],
+    "valueType": "alphanumeric",
+    "description": ""
+  },
+  {
+    "parameterId": "PROSTATE_VOLUME",
+    "parameterName": "Prostate Volume",
+    "aliases": [],
+    "possibleUnits": [
+      "cc"
+    ],
+    "valueType": "numeric",
+    "description": ""
+  },
+  {
+    "parameterId": "FREE_FLUID_IN_THE_ABDOMEN",
+    "parameterName": "Free fluid in the abdomen",
+    "aliases": [],
+    "possibleUnits": [],
+    "valueType": "text",
+    "description": ""
+  }
+]

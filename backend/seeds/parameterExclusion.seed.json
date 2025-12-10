@@ -1,0 +1,93 @@
+[
+  {
+    "excludedParameter": "X-Ray (Chest, Abdomen, Spine, etc.)",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "USG (Abdomen, Pelvis, Obstetric, etc.)",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "CT Scan (Head, Chest, Abdomen, etc.)",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "MRI",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "MRCP",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "Mammography",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "DEXA Scan",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "Doppler Study",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "Fluoroscopy",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "Angiography",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "Nuclear Scan (Bone/Thyroid/Cardiac)",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "PET Scan",
+    "unit": null,
+    "reason": "Radiology/Imaging parameter - not a lab test with numeric values",
+    "isActive": true,
+    "labName": null
+  },
+  {
+    "excludedParameter": "TEST_NAME",
+    "unit": null,
+    "reason": "test",
+    "isActive": true,
+    "labName": "Unknown Lab"
+  }
+]

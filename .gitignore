@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Build outputs
+dist/
+build/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test outputs
+test-results-*.txt
+test-output.log
+
+# Security reports
+eslint-security-report.html
+gitleaks-report*.json
+
+# DAST scan results
+*-zap-*.html
+*-zap-*.json
+nuclei-*.jsonl
+nikto-*.txt
+/tmp/api-security-tests.sh
+/tmp/api-security-test-results.txt
+
+# VAPT scan results
+/tmp/nmap-*.txt
+/tmp/mongodb-security-test.js
+/tmp/vapt-*.sh
+/tmp/vapt-*.txt
+/tmp/file-upload-test.sh
+backend/mongodb-security-test.js
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+tmp_*.md
+temp_*.md
+tmp_security_plan.md
+
+# Uploads
+uploads/
+backend/uploads/
+
+# Claude Code
+.claude/
+.git-backup/
