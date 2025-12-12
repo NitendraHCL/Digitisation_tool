@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5007/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
 // Extract backend base URL (without /api suffix) for direct file access
 export const BACKEND_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
