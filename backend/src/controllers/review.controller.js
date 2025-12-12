@@ -1017,7 +1017,9 @@ const approveReport = async (req, res) => {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    const jsonFilePath = path.join(outputDir, `${report.orderId}.json`);
+    // Sanitize orderId to prevent path traversal attacks
+    const sanitizedOrderId = path.basename(String(report.orderId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_'));
+    const jsonFilePath = path.join(outputDir, `${sanitizedOrderId}.json`);
     fs.writeFileSync(jsonFilePath, JSON.stringify(finalData, null, 2));
 
     console.log('[REVIEW CONTROLLER] Report approved successfully, JSON saved to:', jsonFilePath);

@@ -11,14 +11,22 @@ class ExternalDbService {
     // Read connection (for observation queries)
     this.client = null;
     this.db = null;
-    this.uri = process.env.EXTERNAL_MONGODB_URI || 'mongodb+srv://observation_usr:yeRY3SD3COM1x8YP@dev.cctyb.mongodb.net/';
+    this.uri = process.env.EXTERNAL_MONGODB_URI;
     this.dbName = process.env.EXTERNAL_MONGODB_DB || 'dev_kxhims';
 
     // Write connection (for publishing to observation_non_digitized)
     this.writeClient = null;
     this.writeDb = null;
-    this.writeUri = process.env.EXTERNAL_WRITE_MONGODB_URI || 'mongodb+srv://observation_nd:7hlchpEhxwxsB9N5@dev.cctyb.mongodb.net/';
+    this.writeUri = process.env.EXTERNAL_WRITE_MONGODB_URI;
     this.writeDbName = process.env.EXTERNAL_WRITE_MONGODB_DB || 'dev_kxhims';
+
+    // Validate required environment variables
+    if (!this.uri) {
+      console.warn('[EXTERNAL DB] WARNING: EXTERNAL_MONGODB_URI not configured');
+    }
+    if (!this.writeUri) {
+      console.warn('[EXTERNAL DB] WARNING: EXTERNAL_WRITE_MONGODB_URI not configured');
+    }
   }
 
   /**

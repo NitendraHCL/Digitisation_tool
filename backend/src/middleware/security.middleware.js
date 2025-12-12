@@ -3,7 +3,7 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss');
 
-// Configure helmet for security headers
+// Configure helmet for security headers with Spectre mitigation
 const helmetConfig = helmet({
   contentSecurityPolicy: {
     directives: {
@@ -19,6 +19,7 @@ const helmetConfig = helmet({
       frameAncestors: ["'self'", 'http://localhost:3000', 'http://localhost:3001'], // Allow frontend to iframe PDFs
     },
   },
+  crossOriginOpenerPolicy: { policy: 'same-origin' }, // Spectre mitigation
   crossOriginEmbedderPolicy: false, // Allow PDF viewing
 });
 
@@ -147,6 +148,15 @@ const apiSecurityHeaders = (req, res, next) => {
   next();
 };
 
+// Cache-Control headers to prevent caching of sensitive data (HIPAA compliance)
+const noCacheHeaders = (req, res, next) => {
+  // Set no-cache headers for all API responses to prevent PHI caching
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+
 // IP whitelist/blacklist (optional)
 const ipFilter = (whitelist = [], blacklist = []) => {
   return (req, res, next) => {
@@ -211,6 +221,7 @@ module.exports = {
   validateObjectId,
   requestSizeLimiter,
   apiSecurityHeaders,
+  noCacheHeaders,
   ipFilter,
   suspiciousActivityLogger
 };

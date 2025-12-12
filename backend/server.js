@@ -53,9 +53,19 @@ app.use(helmet({
       // Don't upgrade to HTTPS in development since we're on HTTP
       ...(isDevelopment && { "upgrade-insecure-requests": null })
     }
-  }
+  },
+  crossOriginOpenerPolicy: { policy: 'same-origin' } // Spectre mitigation
 }));
-console.log('[SERVER] ✓ Helmet security headers enabled with CSP for frame-ancestors');
+console.log('[SERVER] ✓ Helmet security headers enabled with CSP and COOP');
+
+// Cache-Control headers for API responses (HIPAA compliance - prevent PHI caching)
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+console.log('[SERVER] ✓ Cache-Control headers enabled for API routes');
 
 // CORS configuration
 console.log('[SERVER] Configuring CORS...');
