@@ -39,8 +39,9 @@ class ExternalDbService {
       console.log('[EXTERNAL DB] Connecting to', this.dbName, '...');
       try {
         this.client = new MongoClient(this.uri, {
-          serverSelectionTimeoutMS: 5000, // 5 second timeout
-          connectTimeoutMS: 5000
+          serverSelectionTimeoutMS: 30000, // 30 second timeout for server selection
+          connectTimeoutMS: 30000,         // 30 second timeout for connection
+          socketTimeoutMS: 45000           // 45 second timeout for socket operations
         });
         await this.client.connect();
         this.db = this.client.db(this.dbName);
@@ -81,8 +82,9 @@ class ExternalDbService {
       console.log('[EXTERNAL DB] Connecting to write DB:', this.writeDbName, '...');
       try {
         this.writeClient = new MongoClient(this.writeUri, {
-          serverSelectionTimeoutMS: 30000,  // Increased to 30 seconds
-          connectTimeoutMS: 30000           // Increased to 30 seconds
+          serverSelectionTimeoutMS: 30000,  // 30 second timeout for server selection
+          connectTimeoutMS: 30000,          // 30 second timeout for connection
+          socketTimeoutMS: 45000            // 45 second timeout for socket operations
         });
         await this.writeClient.connect();
         this.writeDb = this.writeClient.db(this.writeDbName);

@@ -45,11 +45,11 @@ const MyRequests: React.FC = () => {
       const exclusionSuggestions: ExclusionSuggestion[] = exclusionResponse.data.data || [];
 
       // Transform parameter suggestions to combined format
-      const paramRequests: CombinedRequest[] = paramSuggestions.map((s) => ({
+      const paramRequests: CombinedRequest[] = paramSuggestions.map((s: any) => ({
         _id: s._id,
         type: 'parameter' as const,
-        parameterName: s.parameterName,
-        action: getParameterAction(s.suggestionType),
+        parameterName: s.suggestedParameter,
+        action: getParameterAction(s.action),
         details: getParameterDetails(s),
         reason: s.reason,
         status: s.status,
@@ -60,12 +60,12 @@ const MyRequests: React.FC = () => {
       }));
 
       // Transform exclusion suggestions to combined format
-      const exclusionRequests: CombinedRequest[] = exclusionSuggestions.map((s) => ({
+      const exclusionRequests: CombinedRequest[] = exclusionSuggestions.map((s: any) => ({
         _id: s._id,
         type: 'exclusion' as const,
-        parameterName: s.parameterName,
-        action: s.exclusionType === 'unit' ? 'Exclude Unit' : 'Exclude Parameter',
-        details: s.exclusionType === 'unit' ? `Unit: ${s.unitName}` : 'Entire parameter',
+        parameterName: s.suggestedParameter,
+        action: s.suggestedUnit ? 'Exclude Unit' : 'Exclude Parameter',
+        details: s.suggestedUnit ? `Unit: ${s.suggestedUnit}` : 'Entire parameter',
         reason: s.reason,
         status: s.status,
         reviewNotes: s.reviewNotes,
@@ -95,26 +95,26 @@ const MyRequests: React.FC = () => {
     }
   };
 
-  const getParameterAction = (suggestionType: string): string => {
-    switch (suggestionType) {
-      case 'new_parameter':
+  const getParameterAction = (action: string): string => {
+    switch (action) {
+      case 'create':
         return 'New Parameter';
-      case 'alias':
+      case 'update_alias':
         return 'Add Alias';
-      case 'unit_conversion':
+      case 'update_unit':
         return 'Unit Conversion';
       default:
-        return suggestionType;
+        return action;
     }
   };
 
-  const getParameterDetails = (s: ParameterSuggestion): string => {
-    switch (s.suggestionType) {
-      case 'new_parameter':
+  const getParameterDetails = (s: any): string => {
+    switch (s.action) {
+      case 'create':
         return s.suggestedUnit ? `Unit: ${s.suggestedUnit}` : 'New parameter request';
-      case 'alias':
-        return s.suggestedAlias ? `Alias: ${s.suggestedAlias}` : 'Alias request';
-      case 'unit_conversion':
+      case 'update_alias':
+        return s.targetParameterName ? `Target: ${s.targetParameterName}` : 'Alias request';
+      case 'update_unit':
         return s.suggestedUnit ? `Convert to: ${s.suggestedUnit}` : 'Unit conversion';
       default:
         return '-';

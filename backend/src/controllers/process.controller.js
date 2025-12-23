@@ -446,31 +446,50 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
     // INCOMPLETE PROCESSING DETECTION
     // ========================================
     const pdfPages = metadata.pdfPages || 0;
-    const pageWiseDataLength = extractedData.pageWiseData?.length || 0;
+    const pageWiseData = extractedData.pageWiseData || [];
 
-    if (pdfPages > 0 && pageWiseDataLength < pdfPages) {
-      // Find which pages are missing
-      const processedPageNumbers = (extractedData.pageWiseData || []).map(p => p.pageNumber);
-      const allPageNumbers = Array.from({ length: pdfPages }, (_, i) => i + 1);
-      const failedPages = allPageNumbers.filter(p => !processedPageNumbers.includes(p));
+    // Find pages with API errors (have 'error' field - indicates API failure, not empty pages)
+    const errorPages = pageWiseData
+      .filter(p => p.error)
+      .map(p => p.pageNumber);
 
+    // Find missing pages (not in pageWiseData at all)
+    const processedPageNumbers = pageWiseData.map(p => p.pageNumber);
+    const allPageNumbers = Array.from({ length: pdfPages }, (_, i) => i + 1);
+    const missingPages = allPageNumbers.filter(p => !processedPageNumbers.includes(p));
+
+    // Combine as failed pages (deduplicated and sorted)
+    const failedPages = [...new Set([...missingPages, ...errorPages])].sort((a, b) => a - b);
+    const successfulPages = pdfPages - failedPages.length;
+
+    if (pdfPages > 0 && failedPages.length > 0) {
       report.processingIssues = {
         hasIncompleteProcessing: true,
         totalPages: pdfPages,
-        processedPages: pageWiseDataLength,
+        processedPages: successfulPages,
         failedPages: failedPages,
-        message: `${pageWiseDataLength} of ${pdfPages} pages processed`
+        errorPages: errorPages,
+        missingPages: missingPages,
+        message: `${successfulPages} of ${pdfPages} pages processed (${failedPages.length} failed)`
       };
       console.log('[PROCESS] ⚠️  INCOMPLETE PROCESSING DETECTED');
       console.log('[PROCESS]    - Total pages:', pdfPages);
-      console.log('[PROCESS]    - Processed pages:', pageWiseDataLength);
+      console.log('[PROCESS]    - Successfully processed pages:', successfulPages);
       console.log('[PROCESS]    - Failed pages:', failedPages.join(', '));
+      if (errorPages.length > 0) {
+        console.log('[PROCESS]    - Pages with API errors:', errorPages.join(', '));
+      }
+      if (missingPages.length > 0) {
+        console.log('[PROCESS]    - Missing pages:', missingPages.join(', '));
+      }
     } else {
       report.processingIssues = {
         hasIncompleteProcessing: false,
         totalPages: pdfPages,
-        processedPages: pageWiseDataLength,
+        processedPages: pageWiseData.length,
         failedPages: [],
+        errorPages: [],
+        missingPages: [],
         message: null
       };
       console.log('[PROCESS] ✓ All pages processed successfully');

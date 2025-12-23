@@ -211,6 +211,8 @@ const ReviewReport: React.FC = () => {
   const [configuredLabs, setConfiguredLabs] = useState<string[]>([]);
   const [savingLabName, setSavingLabName] = useState(false);
   const [editingLabName, setEditingLabName] = useState(false);
+  // Reprocessing state
+  const [reprocessing, setReprocessing] = useState(false);
 
   // Timer helper functions
   const pauseTimer = () => {
@@ -827,6 +829,24 @@ const ReviewReport: React.FC = () => {
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to reject report';
       enqueueSnackbar(errorMessage, { variant: 'error' });
+    }
+  };
+
+  const handleReprocess = async () => {
+    if (!id) return;
+
+    try {
+      setReprocessing(true);
+      await api.post(`/reports/${id}/reprocess`);
+      enqueueSnackbar('Report reprocessing started. Please wait and refresh the page.', { variant: 'info' });
+      // Refresh the report data after a short delay
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Failed to reprocess report';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+      setReprocessing(false);
     }
   };
 
@@ -1504,6 +1524,36 @@ const ReviewReport: React.FC = () => {
             </Typography>
             <Typography variant="body2">
               {report.flags.summary}
+            </Typography>
+          </Alert>
+        )}
+
+        {/* Incomplete Processing Alert */}
+        {report.processingIssues?.hasIncompleteProcessing && (
+          <Alert
+            severity="error"
+            icon={<WarningIcon />}
+            sx={{ mb: 2 }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={handleReprocess}
+                disabled={reprocessing}
+                startIcon={reprocessing ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+              >
+                {reprocessing ? 'Reprocessing...' : 'Reprocess'}
+              </Button>
+            }
+          >
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Incomplete Processing Detected
+            </Typography>
+            <Typography variant="body2">
+              {report.processingIssues.message || `Only ${report.processingIssues.processedPages} of ${report.processingIssues.totalPages} pages were processed successfully.`}
+              {report.processingIssues.failedPages?.length > 0 && (
+                <> Failed pages: {report.processingIssues.failedPages.join(', ')}</>
+              )}
             </Typography>
           </Alert>
         )}

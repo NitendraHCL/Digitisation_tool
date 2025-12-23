@@ -264,6 +264,49 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+// Reset user password (admin only)
+const resetUserPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    console.log('[ADMIN CONTROLLER] Resetting password for user:', id);
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Set new password - pre-save hook will hash it
+    user.password = newPassword;
+    await user.save();
+
+    console.log('[ADMIN CONTROLLER] Password reset successful for:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    console.error('[ADMIN CONTROLLER] Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // Delete (deactivate) user (admin only)
 const deleteUser = async (req, res) => {
   try {
@@ -326,5 +369,6 @@ module.exports = {
   getUsers,
   updateUser,
   updateUserStatus,
+  resetUserPassword,
   deleteUser
 };

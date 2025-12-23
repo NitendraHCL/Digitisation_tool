@@ -5,6 +5,7 @@ const {
   getUsers,
   updateUser,
   updateUserStatus,
+  resetUserPassword,
   deleteUser
 } = require('../controllers/admin.controller');
 const { authenticate, isAdmin } = require('../middleware/auth.middleware');
@@ -20,6 +21,7 @@ router.post('/users', createUser);
 router.get('/users', getUsers);
 router.put('/users/:id', updateUser);
 router.patch('/users/:id/status', updateUserStatus);
+router.patch('/users/:id/reset-password', resetUserPassword);
 router.delete('/users/:id', deleteUser);
 
 // Test route for debugging

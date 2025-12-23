@@ -110,6 +110,11 @@ const UserManagement: React.FC = () => {
     admins: 0,
   });
 
+  // Password reset state
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -208,6 +213,29 @@ const UserManagement: React.FC = () => {
       fetchUsers();
     } catch (error) {
       enqueueSnackbar('Failed to update user status', { variant: 'error' });
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (newPassword !== confirmPassword) {
+      enqueueSnackbar('Passwords do not match', { variant: 'error' });
+      return;
+    }
+    if (newPassword.length < 6) {
+      enqueueSnackbar('Password must be at least 6 characters', { variant: 'error' });
+      return;
+    }
+
+    try {
+      await api.patch(`/admin/users/${selectedUser?._id}/reset-password`, {
+        newPassword
+      });
+      enqueueSnackbar('Password reset successfully', { variant: 'success' });
+      setResetPasswordDialogOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.message || 'Failed to reset password', { variant: 'error' });
     }
   };
 
@@ -560,6 +588,13 @@ const UserManagement: React.FC = () => {
           View Activity
         </MenuItem>
         <MenuItem onClick={() => {
+          setResetPasswordDialogOpen(true);
+          handleMenuClose();
+        }}>
+          <LockIcon sx={{ mr: 1 }} fontSize="small" color="primary" />
+          Reset Password
+        </MenuItem>
+        <MenuItem onClick={() => {
           if (selectedUser) {
             handleDeleteUser(selectedUser._id);
           }
@@ -660,6 +695,73 @@ const UserManagement: React.FC = () => {
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveUser}>
             {editMode ? 'Save Changes' : 'Create User'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog
+        open={resetPasswordDialogOpen}
+        onClose={() => {
+          setResetPasswordDialogOpen(false);
+          setNewPassword('');
+          setConfirmPassword('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Reset Password for {selectedUser?.name}</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                label="New Password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon />
+                    </InputAdornment>
+                  ),
+                }}
+                helperText="Minimum 6 characters"
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                label="Confirm Password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                error={confirmPassword !== '' && newPassword !== confirmPassword}
+                helperText={confirmPassword !== '' && newPassword !== confirmPassword ? 'Passwords do not match' : ''}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setResetPasswordDialogOpen(false);
+            setNewPassword('');
+            setConfirmPassword('');
+          }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleResetPassword}
+            disabled={!newPassword || !confirmPassword || newPassword !== confirmPassword}
+          >
+            Reset Password
           </Button>
         </DialogActions>
       </Dialog>
