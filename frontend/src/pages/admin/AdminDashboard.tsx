@@ -154,7 +154,7 @@ const AdminDashboard: React.FC = () => {
       const [statsResponse, metricsResponse, labAccuracyResponse] = await Promise.all([
         api.get(`/dashboard/stats?range=${backendRange}`),
         api.get(`/dashboard/metrics?days=${days}`),
-        api.get('/dashboard/lab-accuracy')
+        api.get(`/dashboard/lab-accuracy?range=${backendRange}`)
       ]);
 
       const statsData = statsResponse.data.data;
