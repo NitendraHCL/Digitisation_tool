@@ -468,7 +468,7 @@ const AdminDashboard: React.FC = () => {
             borderRadius: 1,
           }}>
             <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
-              Report Status Distribution
+              Reports Status Distribution
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', height: 340 }}>
               <Box sx={{ flex: 1, minHeight: 0 }}>
