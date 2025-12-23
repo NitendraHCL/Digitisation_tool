@@ -176,30 +176,6 @@ const Login: React.FC = () => {
             showPasswordToggle
           />
 
-          {/* Forgot Password Link */}
-          <div style={{ marginBottom: theme.spacing.lg, textAlign: 'right' }}>
-            <a
-              href="#"
-              style={{
-                fontSize: theme.typography.sizes.small,
-                color: theme.colors.accent,
-                textDecoration: 'none',
-                fontWeight: theme.typography.weights.medium,
-                transition: theme.transitions.fast,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = theme.colors.accentHover;
-                e.currentTarget.style.textDecoration = 'underline';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = theme.colors.accent;
-                e.currentTarget.style.textDecoration = 'none';
-              }}
-            >
-              Forgot password?
-            </a>
-          </div>
-
           {/* Sign In Button */}
           <CustomButton
             type="submit"
