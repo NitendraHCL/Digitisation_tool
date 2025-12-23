@@ -56,23 +56,21 @@ const getDashboardStats = async (req, res) => {
       currentPeriodReports,
       previousPeriodReports,
       statusCounts,
-      previousStatusCounts,
       flaggedReports,
       criticalReports,
       userStats,
       processingTimes,
       previousProcessingTimes,
       labDistribution,
-      previousLabDistribution,
       currentPeriodUsers,
       previousPeriodUsers,
       currentPeriodAccuracy,
       previousPeriodAccuracy
     ] = await Promise.all([
-      // Total reports (filtered by current period)
-      Report.countDocuments({ createdAt: { $gte: currentStart } }),
+      // Total reports (all time)
+      Report.countDocuments(),
 
-      // Current period reports (same as above for compatibility)
+      // Current period reports
       Report.countDocuments({ createdAt: { $gte: currentStart } }),
 
       // Previous period reports (for trend calculation)
@@ -80,23 +78,16 @@ const getDashboardStats = async (req, res) => {
         createdAt: { $gte: previousStart, $lt: previousEnd }
       }),
 
-      // Status distribution (filtered by current period)
+      // Status distribution (all time)
       Report.aggregate([
-        { $match: { createdAt: { $gte: currentStart } } },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
 
-      // Status distribution (previous period for trends)
-      Report.aggregate([
-        { $match: { createdAt: { $gte: previousStart, $lt: previousEnd } } },
-        { $group: { _id: '$status', count: { $sum: 1 } } }
-      ]),
+      // Flagged reports
+      Report.countDocuments({ 'flags.requiresAttention': true }),
 
-      // Flagged reports (filtered by current period)
-      Report.countDocuments({ 'flags.requiresAttention': true, createdAt: { $gte: currentStart } }),
-
-      // Critical reports (filtered by current period)
-      Report.countDocuments({ 'flags.requiresUrgentAttention': true, createdAt: { $gte: currentStart } }),
+      // Critical reports
+      Report.countDocuments({ 'flags.requiresUrgentAttention': true }),
 
       // User statistics
       User.aggregate([
@@ -147,25 +138,22 @@ const getDashboardStats = async (req, res) => {
         }
       ]),
 
-      // Lab distribution (filtered by current period)
+      // Lab distribution
       Report.aggregate([
-        { $match: { 'extractedData.labName': { $exists: true }, createdAt: { $gte: currentStart } } },
+        { $match: { 'extractedData.labName': { $exists: true } } },
         { $group: { _id: '$extractedData.labName', count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]),
 
-      // Lab distribution (previous period for trends)
-      Report.aggregate([
-        { $match: { 'extractedData.labName': { $exists: true }, createdAt: { $gte: previousStart, $lt: previousEnd } } },
-        { $group: { _id: '$extractedData.labName', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-      ]),
+      // Active users in current period
+      User.countDocuments({
+        createdAt: { $gte: currentStart }
+      }),
 
-      // Active users who uploaded reports in current period
-      Report.distinct('uploadedBy', { createdAt: { $gte: currentStart } }),
-
-      // Active users who uploaded reports in previous period
-      Report.distinct('uploadedBy', { createdAt: { $gte: previousStart, $lt: previousEnd } }),
+      // Active users in previous period
+      User.countDocuments({
+        createdAt: { $gte: previousStart, $lt: previousEnd }
+      }),
 
       // Weighted accuracy calculation for current period (reviewed reports)
       Report.aggregate([
@@ -249,10 +237,6 @@ const getDashboardStats = async (req, res) => {
     const currentAvgProcessingTime = processingTimes[0]?.avgTime || 0;
     const previousAvgProcessingTime = previousProcessingTimes[0]?.avgTime || 0;
 
-    // Active users are now distinct arrays from Report.distinct()
-    const activeUsersCurrentPeriod = Array.isArray(currentPeriodUsers) ? currentPeriodUsers.length : 0;
-    const activeUsersPreviousPeriod = Array.isArray(previousPeriodUsers) ? previousPeriodUsers.length : 0;
-
     const stats = {
       overview: {
         totalReports,
@@ -275,7 +259,7 @@ const getDashboardStats = async (req, res) => {
         normalReports: totalReports - flaggedReports
       },
       users: {
-        total: activeUsersCurrentPeriod, // Now shows active users in the selected period
+        total: totalUsers,
         admins: userMap.admin || 0,
         superAdmins: userMap.super_admin || 0,
         nurses: userMap.nurse || 0
@@ -288,11 +272,11 @@ const getDashboardStats = async (req, res) => {
       labDistribution: labDistribution.map(lab => ({
         name: lab._id,
         count: lab.count,
-        percentage: totalReports > 0 ? Math.round(lab.count / totalReports * 100) : 0
+        percentage: Math.round(lab.count / totalReports * 100)
       })),
       trends: {
-        totalReports: calculateTrend(totalReports, previousPeriodReports),
-        activeUsers: calculateTrend(activeUsersCurrentPeriod, activeUsersPreviousPeriod),
+        totalReports: calculateTrend(totalReports, totalReports - currentPeriodReports + previousPeriodReports),
+        activeUsers: calculateTrend(currentPeriodUsers, previousPeriodUsers),
         processingTime: calculateTrend(currentAvgProcessingTime, previousAvgProcessingTime),
         approvalRate: calculateTrend(approvalRate, previousAccuracyRate) // Weighted accuracy trend
       }
@@ -515,34 +499,7 @@ const getPerformanceMetrics = async (req, res) => {
 // Get lab accuracy statistics
 const getLabAccuracyStats = async (req, res) => {
   try {
-    const { range = 'week' } = req.query;
-    console.log('[DASHBOARD CONTROLLER] Fetching lab accuracy statistics for range:', range);
-
-    // Get date range based on selected range
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    let startDate;
-    switch (range) {
-      case 'today':
-        startDate = today;
-        break;
-      case 'week':
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
-        break;
-      case 'month':
-        startDate = new Date();
-        startDate.setMonth(startDate.getMonth() - 1);
-        break;
-      case 'year':
-        startDate = new Date();
-        startDate.setFullYear(startDate.getFullYear() - 1);
-        break;
-      default:
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
-    }
+    console.log('[DASHBOARD CONTROLLER] Fetching lab accuracy statistics');
 
     // Aggregate lab-wise accuracy statistics using weighted average formula
     const labStats = await Report.aggregate([
@@ -550,8 +507,7 @@ const getLabAccuracyStats = async (req, res) => {
         $match: {
           status: { $in: ['approved', 'rejected', 'published'] },
           'extractedData.labName': { $exists: true, $ne: null },
-          'auditSummary.totalParameters': { $gt: 0 },
-          createdAt: { $gte: startDate }
+          'auditSummary.totalParameters': { $gt: 0 }
         }
       },
       {
