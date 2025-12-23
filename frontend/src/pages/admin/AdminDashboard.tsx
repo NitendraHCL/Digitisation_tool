@@ -141,10 +141,19 @@ const AdminDashboard: React.FC = () => {
       };
       const backendRange = rangeMap[timeRange] || 'week';
 
+      // Map timeRange to days parameter for metrics endpoint
+      const daysMap: Record<string, number> = {
+        '24hours': 1,
+        '7days': 7,
+        '30days': 30,
+        '90days': 90
+      };
+      const days = daysMap[timeRange] || 7;
+
       // Fetch stats, metrics, and lab accuracy in parallel
       const [statsResponse, metricsResponse, labAccuracyResponse] = await Promise.all([
         api.get(`/dashboard/stats?range=${backendRange}`),
-        api.get('/dashboard/metrics?days=7'),
+        api.get(`/dashboard/metrics?days=${days}`),
         api.get('/dashboard/lab-accuracy')
       ]);
 
