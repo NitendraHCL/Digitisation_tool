@@ -1,0 +1,62 @@
+# GitLab CI/CD Pipeline for Lab Digitization System
+# Auto-deploys to EC2 on push to master branch
+
+stages:
+  - deploy
+
+variables:
+  EC2_HOST: "13.205.18.240"
+  EC2_USER: "ubuntu"
+  APP_DIR: "/home/ubuntu/mern-app"
+
+deploy_to_ec2:
+  stage: deploy
+  only:
+    - master
+  tags:
+    - docker
+  image: alpine:latest
+  before_script:
+    # Install SSH client
+    - apk add --no-cache openssh-client
+    # Set up SSH key from CI/CD variable
+    - mkdir -p ~/.ssh
+    - echo "$EC2_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    # Add EC2 host to known hosts
+    - ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
+  script:
+    - echo "Deploying to EC2..."
+    - |
+      ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
+        set -e
+        echo "=== Starting Deployment ==="
+
+        # Navigate to app directory
+        cd /home/ubuntu/mern-app
+
+        # Pull latest code
+        echo "Pulling latest code..."
+        git pull origin master
+
+        # Install backend dependencies (if package.json changed)
+        echo "Checking backend dependencies..."
+        cd backend
+        npm install --production
+
+        # Build frontend
+        echo "Building frontend..."
+        cd ../frontend
+        npm install
+        npm run build
+
+        # Restart backend
+        echo "Restarting backend..."
+        pm2 restart backend-app
+
+        echo "=== Deployment Complete ==="
+      ENDSSH
+    - echo "Deployment successful!"
+  environment:
+    name: production
+    url: http://13.205.18.240
