@@ -189,7 +189,7 @@ const Layout: React.FC = () => {
             icon: <SettingsIcon />,
           },
           {
-            title: 'Parameter Master',
+            title: 'Parameters Master',
             path: '/admin/parameter-master',
             icon: <ParameterIcon />,
             badge: pendingParamSuggestions >= 1 ? pendingParamSuggestions : undefined,
