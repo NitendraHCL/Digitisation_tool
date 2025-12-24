@@ -431,7 +431,7 @@ const AdminDashboard: React.FC = () => {
                 <Area
                   type="monotone"
                   dataKey="total"
-                  name="Total Reports"
+                  name="Total Reportss"
                   stackId="1"
                   stroke="#3A5A9F"
                   strokeWidth={2}
