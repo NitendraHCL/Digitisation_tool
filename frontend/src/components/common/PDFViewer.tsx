@@ -237,20 +237,31 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl, currentPage = 1, totalPag
             </Box>
           </Alert>
         ) : (
-          <iframe
-            key={`pdf-page-${currentPage}`}
-            ref={iframeRef}
-            src={`${pdfUrl}#page=${currentPage}&view=FitH&pagemode=none&toolbar=0&navpanes=0&scrollbar=1`}
-            title="PDF Viewer"
-            onLoad={handleLoad}
-            onError={handleError}
-            style={{
+          <Box
+            sx={{
               width: '100%',
               height: '100%',
-              border: 'none',
+              overflow: 'auto',
               display: loading ? 'none' : 'block',
             }}
-          />
+          >
+            <iframe
+              key={`pdf-page-${currentPage}`}
+              ref={iframeRef}
+              src={`${pdfUrl}#page=${currentPage}&view=FitH&pagemode=none&toolbar=0&navpanes=0&scrollbar=1`}
+              title="PDF Viewer"
+              onLoad={handleLoad}
+              onError={handleError}
+              style={{
+                width: `${zoom}%`,
+                height: `${zoom}%`,
+                border: 'none',
+                transformOrigin: 'top left',
+                minWidth: '100%',
+                minHeight: '100%',
+              }}
+            />
+          </Box>
         )}
       </Box>
     </Paper>
