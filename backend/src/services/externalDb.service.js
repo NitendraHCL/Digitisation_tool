@@ -12,13 +12,13 @@ class ExternalDbService {
     this.client = null;
     this.db = null;
     this.uri = process.env.EXTERNAL_MONGODB_URI;
-    this.dbName = process.env.EXTERNAL_MONGODB_DB || 'dev_kxhims';
+    this.dbName = process.env.EXTERNAL_MONGODB_DB || 'prod_kxhims';
 
     // Write connection (for publishing to observation_non_digitized)
     this.writeClient = null;
     this.writeDb = null;
     this.writeUri = process.env.EXTERNAL_WRITE_MONGODB_URI;
-    this.writeDbName = process.env.EXTERNAL_WRITE_MONGODB_DB || 'dev_kxhims';
+    this.writeDbName = process.env.EXTERNAL_WRITE_MONGODB_DB || 'prod_kxhims';
 
     // Validate required environment variables
     if (!this.uri) {
