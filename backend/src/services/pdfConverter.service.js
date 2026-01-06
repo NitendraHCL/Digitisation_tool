@@ -2,6 +2,8 @@ const { fromPath } = require('pdf2pic');
 const path = require('path');
 const fs = require('fs').promises;
 const pdfParse = require('pdf-parse');
+const audit = require('../utils/auditLogger');
+const { withRetry, sleep } = require('../utils/retryHelper');
 
 class PDFConverterService {
   constructor() {
@@ -20,12 +22,17 @@ class PDFConverterService {
     };
   }
 
-  async convertToImages(pdfPath) {
+  async convertToImages(pdfPath, requestId = null) {
     const totalStartTime = Date.now();
     console.log('[PDF CONVERTER] ========================================');
     console.log('[PDF CONVERTER] STARTING PDF TO IMAGE CONVERSION');
     console.log('[PDF CONVERTER] ========================================');
     console.log('[PDF CONVERTER] 1. PDF path:', pdfPath);
+    console.log('[PDF CONVERTER] 1a. Request ID:', requestId || 'N/A');
+
+    if (requestId) {
+      audit.logStep(requestId, 'PDF_CONVERTER_INIT', { message: `Path: ${pdfPath}` });
+    }
 
     // Create a unique temp directory for this conversion to avoid race conditions
     const uniqueTempDir = path.join(
@@ -80,9 +87,16 @@ class PDFConverterService {
         };
 
         try {
-          // Convert page to image
+          // Convert page to image with retry logic
           const conversionStart = Date.now();
-          const result = await converter(pageNum);
+          const result = await withRetry(
+            () => converter(pageNum),
+            {
+              maxRetries: 2,
+              baseDelayMs: 500,
+              operationName: `PDF page ${pageNum} conversion`
+            }
+          );
           timings.conversion = Date.now() - conversionStart;
 
           if (!result || !result.path) {
@@ -136,13 +150,119 @@ class PDFConverterService {
           if (error.message && error.message.includes('Request page out of range')) {
             return { pageNum, success: false, reason: 'out_of_range', timings };
           }
-          console.error(`[PDF CONVERTER] ERROR: Page ${pageNum} conversion failed:`, error.message);
-          return { pageNum, success: false, reason: 'error', error: error.message, timings };
+
+          // Categorize file system errors
+          const isPermissionError =
+            error.code === 'EACCES' ||
+            error.code === 'EPERM' ||
+            error.message.includes('permission denied');
+
+          const isDiskSpaceError =
+            error.code === 'ENOSPC' ||
+            error.message.includes('no space left');
+
+          const isFileNotFound =
+            error.code === 'ENOENT' ||
+            error.message.includes('no such file');
+
+          const isGraphicsMagickError =
+            error.message.includes('GraphicsMagick') ||
+            error.message.includes('gm convert') ||
+            error.message.includes('Command failed');
+
+          // Determine error category
+          let errorCategory = 'PDF_PAGE_ERROR';
+          if (isPermissionError) errorCategory = 'FILE_PERMISSION_ERROR';
+          else if (isDiskSpaceError) errorCategory = 'DISK_SPACE_ERROR';
+          else if (isFileNotFound) errorCategory = 'FILE_NOT_FOUND';
+          else if (isGraphicsMagickError) errorCategory = 'GRAPHICS_MAGICK_ERROR';
+
+          console.error(`[PDF CONVERTER] ERROR [${errorCategory}]: Page ${pageNum} conversion failed:`, error.message);
+
+          // Log to audit if requestId available
+          if (requestId) {
+            audit.logError(requestId, errorCategory, error, {
+              step: `PDF_PAGE_${pageNum}_CONVERT`,
+              pageNumber: pageNum,
+              operation: 'convertToImages',
+              filePath: pdfPath,
+              context: {
+                errorCode: error.code,
+                isPermissionError,
+                isDiskSpaceError,
+                isFileNotFound,
+                isGraphicsMagickError,
+                tempDir: uniqueTempDir,
+                totalPages: maxPages
+              }
+            });
+          }
+
+          return { pageNum, success: false, reason: 'error', error: error.message, errorCategory, timings };
         }
       });
 
       // Wait for all pages to complete
-      const allPageResults = await Promise.all(pagePromises);
+      let allPageResults = await Promise.all(pagePromises);
+
+      // Identify failed pages that are retryable (not out_of_range or no_more_pages)
+      const retryableFailures = allPageResults.filter(
+        result => !result.success && result.reason === 'error'
+      );
+
+      // Retry stats for audit
+      const retryStats = {
+        totalRetries: 0,
+        pagesRetried: [],
+        retriedSuccessfully: []
+      };
+
+      // Retry failed pages (one round, sequentially to avoid GraphicsMagick contention)
+      if (retryableFailures.length > 0) {
+        console.log(`[PDF CONVERTER] 4a. Retrying ${retryableFailures.length} failed pages...`);
+        await sleep(1000); // Wait 1 second before retry
+
+        for (const failedPage of retryableFailures) {
+          const pageNum = failedPage.pageNum;
+          retryStats.totalRetries++;
+          retryStats.pagesRetried.push(pageNum);
+
+          try {
+            console.log(`[PDF CONVERTER] 4b. Retrying page ${pageNum}...`);
+            const retryStart = Date.now();
+            const result = await converter(pageNum);
+
+            if (result && result.path) {
+              await fs.access(result.path);
+              const imageBuffer = await fs.readFile(result.path);
+              const base64Image = imageBuffer.toString('base64');
+
+              if (base64Image.length > 0) {
+                await fs.unlink(result.path);
+                const retryTime = Date.now() - retryStart;
+
+                // Replace failed result with successful one
+                const idx = allPageResults.findIndex(r => r.pageNum === pageNum);
+                allPageResults[idx] = {
+                  pageNum,
+                  success: true,
+                  base64: base64Image,
+                  size: base64Image.length,
+                  timings: { conversion: retryTime, read: 0, base64: 0, cleanup: 0 },
+                  totalTime: retryTime,
+                  wasRetried: true
+                };
+                retryStats.retriedSuccessfully.push(pageNum);
+                console.log(`[PDF CONVERTER] 4c. Page ${pageNum} retry SUCCEEDED in ${retryTime}ms`);
+              }
+            }
+          } catch (retryError) {
+            console.error(`[PDF CONVERTER] 4d. Page ${pageNum} retry FAILED:`, retryError.message);
+          }
+        }
+
+        console.log(`[PDF CONVERTER] 4e. Retry complete: ${retryStats.retriedSuccessfully.length}/${retryableFailures.length} pages recovered`);
+      }
 
       // Filter successful pages and sort by page number
       const successfulPages = allPageResults
@@ -173,6 +293,8 @@ class PDFConverterService {
       }
 
       const totalDuration = (Date.now() - totalStartTime) / 1000;
+      const totalPayloadMB = (images.reduce((sum, img) => sum + img.length, 0)) / 1024 / 1024;
+
       console.log('[PDF CONVERTER] ========================================');
       console.log('[PDF CONVERTER] ✓ CONVERSION COMPLETE');
       console.log('[PDF CONVERTER] ========================================');
@@ -184,12 +306,89 @@ class PDFConverterService {
       console.log('[PDF CONVERTER] 11. Total base64 encoding:', (totalBase64Time / 1000).toFixed(2), 's');
       console.log('[PDF CONVERTER] 12. Total cleanup:', (totalCleanupTime / 1000).toFixed(2), 's');
       console.log('[PDF CONVERTER] 13. Average per page:', (totalDuration / images.length).toFixed(2), 's');
-      console.log('[PDF CONVERTER] 14. Total payload size:', ((images.reduce((sum, img) => sum + img.length, 0)) / 1024 / 1024).toFixed(2), 'MB');
+      console.log('[PDF CONVERTER] 14. Total payload size:', totalPayloadMB.toFixed(2), 'MB');
 
-      return images;
+      // Build per-page timing data for audit
+      const pdfPageTimings = successfulPages.map(page => ({
+        pageNumber: page.pageNum,
+        conversionTime: page.timings.conversion,
+        readTime: page.timings.read,
+        base64Time: page.timings.base64,
+        cleanupTime: page.timings.cleanup,
+        totalTime: page.totalTime,
+        fileSize: Math.round(page.size / 1024) // KB
+      }));
+
+      if (requestId) {
+        audit.logStep(requestId, 'PDF_CONVERTER_COMPLETE', {
+          status: 'success',
+          duration: totalDuration,
+          count: images.length,
+          size: `${totalPayloadMB.toFixed(2)}MB`,
+          message: `Converted ${images.length} pages in ${totalDuration.toFixed(2)}s | PNG conversion: ${(totalConversionTime / 1000).toFixed(2)}s | Avg: ${(totalDuration / images.length).toFixed(2)}s/page`,
+          pdfPageTimings // Include timing data for audit
+        });
+      }
+
+      return {
+        images,
+        pdfTimings: {
+          totalTime: totalConversionTime + totalFileReadTime + totalBase64Time + totalCleanupTime, // ms
+          perPage: pdfPageTimings,
+          retryStats: retryStats.totalRetries > 0 ? retryStats : null
+        }
+      };
 
     } catch (error) {
       console.error('[PDF CONVERTER] Conversion error:', error);
+
+      // Categorize the error for comprehensive logging
+      const isPermissionError =
+        error.code === 'EACCES' ||
+        error.code === 'EPERM' ||
+        error.message.includes('permission denied');
+
+      const isDiskSpaceError =
+        error.code === 'ENOSPC' ||
+        error.message.includes('no space left');
+
+      const isFileNotFound =
+        error.code === 'ENOENT' ||
+        error.message.includes('no such file');
+
+      const isGraphicsMagickError =
+        error.message.includes('GraphicsMagick') ||
+        error.message.includes('gm convert') ||
+        error.message.includes('Command failed');
+
+      const isPdfParseError =
+        error.message.includes('pdf-parse') ||
+        error.message.includes('Invalid PDF');
+
+      // Determine error category
+      let errorCategory = 'PDF_CONVERSION_ERROR';
+      if (isPermissionError) errorCategory = 'FILE_PERMISSION_ERROR';
+      else if (isDiskSpaceError) errorCategory = 'DISK_SPACE_ERROR';
+      else if (isFileNotFound) errorCategory = 'FILE_NOT_FOUND';
+      else if (isGraphicsMagickError) errorCategory = 'GRAPHICS_MAGICK_ERROR';
+      else if (isPdfParseError) errorCategory = 'PDF_PARSE_ERROR';
+
+      if (requestId) {
+        audit.logError(requestId, errorCategory, error, {
+          step: 'PDF_CONVERSION',
+          operation: 'convertToImages',
+          filePath: pdfPath,
+          context: {
+            errorCode: error.code,
+            isPermissionError,
+            isDiskSpaceError,
+            isFileNotFound,
+            isGraphicsMagickError,
+            isPdfParseError,
+            tempDir: uniqueTempDir
+          }
+        });
+      }
       throw new Error(`PDF conversion failed: ${error.message}`);
     } finally {
       // Cleanup: Remove the unique temp directory

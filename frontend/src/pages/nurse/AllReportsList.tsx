@@ -486,6 +486,9 @@ const AllReportsList: React.FC = () => {
                       REPORT ID
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
+                      ORDER ID
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
                       PROCESSED ON
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.75rem' }}>
@@ -525,6 +528,20 @@ const AllReportsList: React.FC = () => {
                         }
                       }}
                     >
+                      <TableCell>
+                        <Tooltip title={report._id}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {report._id.slice(-8)}
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <ReportIcon fontSize="small" color="action" />

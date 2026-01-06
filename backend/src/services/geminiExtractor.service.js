@@ -1,6 +1,8 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const LabConfig = require('../models/LabConfig');
 const pLimit = require('p-limit');
+const audit = require('../utils/auditLogger');
+const { withRetry, sleep } = require('../utils/retryHelper');
 
 // Helper function to normalize gender values to schema-compatible values
 // Converts "M", "m", "Male", "MALE" → "male"
@@ -122,13 +124,21 @@ ${text}`;
 
       console.log('[GEMINI] 11a. Generation config: temperature=0 (deterministic), topK=1, maxTokens=32768');
 
-      // Call Gemini with specified model
+      // Call Gemini with specified model (with retry logic)
       const model = this.genAI.getGenerativeModel({
         model: modelName,
         generationConfig,
         safetySettings
       });
-      const result = await model.generateContent(prompt);
+
+      const result = await withRetry(
+        () => model.generateContent(prompt),
+        {
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          operationName: 'Gemini extractFromText API call'
+        }
+      );
 
       const apiCallEndTime = Date.now();
       const apiDuration = ((apiCallEndTime - apiCallStartTime) / 1000).toFixed(2);
@@ -644,9 +654,10 @@ The pages in this lab report are provided in their original sequential order. Yo
    * @param {Array<string>} images - Array of base64-encoded PNG images (one per page)
    * @param {string} orderId - Order ID for logging
    * @param {string} modelName - Gemini model to use
+   * @param {string} requestId - Request ID for audit logging
    * @returns {Object} - { labName, results, pageWiseData, tokenUsage }
    */
-  async extractFromImagesPageWise(images, orderId, modelName = 'gemini-2.5-flash') {
+  async extractFromImagesPageWise(images, orderId, modelName = 'gemini-2.5-flash', requestId = null) {
     const startTime = Date.now();
     console.log('[GEMINI PAGEWISE] 1. ========== STARTING PAGE-BY-PAGE EXTRACTION ==========');
     console.log('[GEMINI PAGEWISE] 2. Order ID:', orderId);
@@ -761,9 +772,16 @@ The pages in this lab report are provided in their original sequential order. Yo
               safetySettings
             });
 
-            // Call Gemini for this page
+            // Call Gemini for this page (with retry logic)
             const contents = [promptTemplate, imagePart];
-            const result = await model.generateContent(contents);
+            const result = await withRetry(
+              () => model.generateContent(contents),
+              {
+                maxRetries: 2,
+                baseDelayMs: 1000,
+                operationName: `Gemini page ${pageNumber} API call`
+              }
+            );
             const response = result.response.text();
 
             const pageEndTime = Date.now();
@@ -771,6 +789,14 @@ The pages in this lab report are provided in their original sequential order. Yo
 
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Response length: ${response.length} characters`);
+
+            // Log to audit
+            if (requestId) {
+              audit.logApiCall(requestId, `GEMINI_PAGE_${pageNumber}`, {
+                duration: parseFloat(pageDuration),
+                responseLength: response.length
+              });
+            }
 
             // DEBUG: Log full response for page
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. ========== FULL RESPONSE FOR PAGE ${pageNumber} ==========`);
@@ -892,6 +918,16 @@ The pages in this lab report are provided in their original sequential order. Yo
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Tokens: ${inputTokens} input, ${outputTokens} output`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}h. Cost: $${pageCost.toFixed(6)}`);
 
+            // Log page metric to audit
+            if (requestId) {
+              audit.logPageMetric(requestId, pageNumber, {
+                duration: parseFloat(pageDuration),
+                parametersExtracted: pageResults.length,
+                tokens: inputTokens + outputTokens,
+                cost: pageCost
+              });
+            }
+
             // Return page data (will be collected by Promise.all)
             return {
               pageNumber: pageNumber,
@@ -913,11 +949,74 @@ The pages in this lab report are provided in their original sequential order. Yo
               extractedAt: new Date()
             };
           } catch (pageError) {
+            const pageErrorDuration = ((Date.now() - pageStartTime) / 1000).toFixed(2);
             console.error(`[GEMINI PAGEWISE] 7.${pageNumber}x. ❌ ERROR processing page: ${pageError.message}`);
+
+            // Categorize error type
+            const isRateLimit =
+              pageError.message.includes('429') ||
+              pageError.message.includes('Too Many Requests') ||
+              pageError.message.includes('RESOURCE_EXHAUSTED') ||
+              pageError.message.includes('quota');
+
+            const isNetworkError =
+              pageError.message.includes('ECONNRESET') ||
+              pageError.message.includes('ETIMEDOUT') ||
+              pageError.message.includes('network') ||
+              pageError.message.includes('socket');
+
+            const isAuthError =
+              pageError.message.includes('401') ||
+              pageError.message.includes('403') ||
+              pageError.message.includes('API key');
+
+            // Determine error category
+            let errorCategory = 'API_ERROR';
+            if (isRateLimit) {
+              errorCategory = 'RATE_LIMIT';
+              console.error(`[GEMINI PAGEWISE] 🚨 RATE LIMIT on page ${pageNumber}`);
+            } else if (isNetworkError) {
+              errorCategory = 'NETWORK_ERROR';
+            } else if (isAuthError) {
+              errorCategory = 'AUTH_ERROR';
+            }
+
+            // Log page error to audit with comprehensive context
+            if (requestId) {
+              audit.logPageMetric(requestId, pageNumber, {
+                duration: parseFloat(pageErrorDuration),
+                error: pageError.message,
+                context: {
+                  errorCategory,
+                  isRateLimit,
+                  isNetworkError,
+                  isAuthError,
+                  model: modelName,
+                  imageSize: imageData ? (imageData.length / 1024).toFixed(2) + 'KB' : 'N/A',
+                  retryable: isRateLimit || isNetworkError
+                }
+              });
+
+              // Also log as error with full context
+              audit.logError(requestId, errorCategory, pageError, {
+                step: `GEMINI_PAGE_${pageNumber}`,
+                pageNumber,
+                model: modelName,
+                operation: 'extractFromImagesPageWise',
+                code: isRateLimit ? '429' : undefined,
+                retryable: isRateLimit || isNetworkError,
+                context: {
+                  totalPages: images.length,
+                  imageSize: imageData ? imageData.length : 0
+                }
+              });
+            }
+
             // Return error info instead of failing completely
             return {
               pageNumber: pageNumber,
               error: pageError.message,
+              errorCategory,
               results: []
             };
           }
@@ -926,7 +1025,130 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Execute all page processing concurrently
       console.log('[GEMINI PAGEWISE] 7. Executing concurrent API calls...');
-      const pageResultsArray = await Promise.all(pagePromises);
+      let pageResultsArray = await Promise.all(pagePromises);
+
+      // Identify failed pages for retry
+      const failedPages = pageResultsArray.filter(p => p && p.error);
+      const retryStats = {
+        totalRetries: 0,
+        pagesRetried: [],
+        retriedSuccessfully: []
+      };
+
+      // Retry failed pages (max 2 rounds, reduced concurrency)
+      if (failedPages.length > 0) {
+        console.log(`[GEMINI PAGEWISE] 7a. Retrying ${failedPages.length} failed pages...`);
+
+        for (let retryRound = 1; retryRound <= 2 && failedPages.length > 0; retryRound++) {
+          await sleep(2000); // Wait 2 seconds between retry rounds
+          console.log(`[GEMINI PAGEWISE] 7b. Retry round ${retryRound} for ${failedPages.length} pages...`);
+
+          const retryLimit = pLimit(5); // Reduced concurrency for retries
+          const retryPromises = failedPages.map((failedPage) =>
+            retryLimit(async () => {
+              const pageNumber = failedPage.pageNumber;
+              const pageIndex = pageNumber - 1;
+              const base64Image = images[pageIndex];
+
+              if (!base64Image) return failedPage;
+
+              retryStats.totalRetries++;
+              retryStats.pagesRetried.push(pageNumber);
+
+              try {
+                console.log(`[GEMINI PAGEWISE] 7c. Retrying page ${pageNumber}...`);
+                const imagePart = {
+                  inlineData: {
+                    data: base64Image,
+                    mimeType: 'image/png'
+                  }
+                };
+
+                const model = this.genAI.getGenerativeModel({
+                  model: modelName,
+                  generationConfig: { temperature: 0, topP: 1, topK: 1, maxOutputTokens: 8192 },
+                  safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+                  ]
+                });
+
+                const result = await model.generateContent([promptTemplate, imagePart]);
+                const response = result.response.text();
+
+                // Parse response (simplified)
+                const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
+                const lines = allLines.filter(l => l.includes('|'));
+                const pageResults = [];
+
+                for (const line of lines) {
+                  const parts = line.split('|').map(p => p.trim());
+                  if (parts.length >= 7) {
+                    pageResults.push({
+                      type: 'path',
+                      serviceItemName: parts[0],
+                      value: parts[1] === 'null' || parts[1] === '' ? null : parts[1],
+                      unit: parts[2] === 'null' || parts[2] === '' ? null : parts[2],
+                      method: parts[3] === 'null' || parts[3] === '' ? null : parts[3],
+                      referenceRange: {
+                        high: parts[5] === 'null' ? null : parseFloat(parts[5]),
+                        low: parts[6] === 'null' ? null : parseFloat(parts[6]),
+                        referenceRange: parts[4]
+                      }
+                    });
+                  }
+                }
+
+                const usageMetadata = result.response.usageMetadata;
+                const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+                const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+
+                retryStats.retriedSuccessfully.push(pageNumber);
+                console.log(`[GEMINI PAGEWISE] 7d. Page ${pageNumber} retry SUCCEEDED: ${pageResults.length} parameters`);
+
+                return {
+                  pageNumber,
+                  rawResponse: response,
+                  results: pageResults,
+                  labName: null,
+                  extractionMetadata: {
+                    responseLength: response.length,
+                    parametersExtracted: pageResults.length,
+                    inputTokens,
+                    outputTokens,
+                    cost: ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000,
+                    wasRetried: true
+                  },
+                  extractedAt: new Date()
+                };
+              } catch (retryError) {
+                console.error(`[GEMINI PAGEWISE] 7e. Page ${pageNumber} retry FAILED: ${retryError.message}`);
+                return failedPage; // Return original failed result
+              }
+            })
+          );
+
+          const retryResults = await Promise.all(retryPromises);
+
+          // Update pageResultsArray with successful retries
+          for (const retryResult of retryResults) {
+            if (!retryResult.error) {
+              const idx = pageResultsArray.findIndex(p => p.pageNumber === retryResult.pageNumber);
+              if (idx !== -1) {
+                pageResultsArray[idx] = retryResult;
+              }
+            }
+          }
+
+          // Update failed pages list for next round
+          failedPages.length = 0;
+          failedPages.push(...retryResults.filter(r => r.error));
+        }
+
+        console.log(`[GEMINI PAGEWISE] 7f. Retry complete: ${retryStats.retriedSuccessfully.length} pages recovered`);
+      }
 
       // Process results and aggregate data
       console.log('[GEMINI PAGEWISE] 8. Aggregating results from all pages...');
@@ -1029,6 +1251,35 @@ The pages in this lab report are provided in their original sequential order. Yo
       console.error('[GEMINI PAGEWISE] ERROR: Extraction failed after', errorDuration, 'seconds');
       console.error('[GEMINI PAGEWISE] ERROR:', error.message);
       console.error('[GEMINI PAGEWISE] ERROR: Stack:', error.stack);
+
+      // Log comprehensive error to audit
+      if (requestId) {
+        // Categorize the error
+        const isRateLimit =
+          error.message.includes('429') ||
+          error.message.includes('Too Many Requests') ||
+          error.message.includes('RESOURCE_EXHAUSTED');
+
+        const isConfigError =
+          error.message.includes('API key') ||
+          error.message.includes('configuration');
+
+        const errorCategory = isRateLimit ? 'RATE_LIMIT' : isConfigError ? 'CONFIG_ERROR' : 'EXTRACTION_ERROR';
+
+        audit.logError(requestId, errorCategory, error, {
+          step: 'GEMINI_PAGEWISE_EXTRACTION',
+          model: modelName,
+          operation: 'extractFromImagesPageWise',
+          code: isRateLimit ? '429' : undefined,
+          retryable: isRateLimit,
+          context: {
+            orderId,
+            totalPages: images.length,
+            processingDuration: parseFloat(errorDuration)
+          }
+        });
+      }
+
       throw error;
     }
   }

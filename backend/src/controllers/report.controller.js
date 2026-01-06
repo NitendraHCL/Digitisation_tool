@@ -3,6 +3,59 @@ const path = require('path');
 const fs = require('fs');
 const parameterValidator = require('../services/parameterValidator.service');
 
+// Base uploads directory - used for path resolution and security validation
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+
+/**
+ * Resolve PDF path - handles both old absolute paths and new relative paths
+ * Also validates path is within uploads directory (prevents path traversal)
+ * @param {string} storedPath - Path stored in database (could be absolute or relative)
+ * @returns {string|null} - Resolved safe path or null if invalid
+ */
+const resolvePdfPath = (storedPath) => {
+  if (!storedPath) return null;
+
+  let resolvedPath;
+
+  // Check if it's already an absolute path (old format)
+  if (path.isAbsolute(storedPath)) {
+    resolvedPath = path.resolve(storedPath);
+  } else {
+    // Relative path (new format) - resolve against uploads directory
+    resolvedPath = path.resolve(UPLOADS_DIR, storedPath);
+  }
+
+  // SECURITY: Validate path is within uploads directory (prevents path traversal)
+  if (!resolvedPath.startsWith(UPLOADS_DIR)) {
+    console.error('[SECURITY] Path traversal attempt blocked:', storedPath);
+    return null;
+  }
+
+  return resolvedPath;
+};
+
+/**
+ * Convert absolute path to relative (for storing in DB)
+ * @param {string} absolutePath - Full absolute path
+ * @returns {string} - Relative path from uploads directory
+ */
+const toRelativePath = (absolutePath) => {
+  if (!absolutePath) return absolutePath;
+
+  // If already relative, return as-is
+  if (!path.isAbsolute(absolutePath)) return absolutePath;
+
+  // Convert to relative path from uploads directory
+  const relativePath = path.relative(UPLOADS_DIR, absolutePath);
+
+  // If the relative path goes outside uploads (starts with ..), return just filename
+  if (relativePath.startsWith('..')) {
+    return path.basename(absolutePath);
+  }
+
+  return relativePath;
+};
+
 // Upload PDF controller
 const uploadPDF = async (req, res) => {
   try {
@@ -41,10 +94,11 @@ const uploadPDF = async (req, res) => {
     }
 
     // Create new report record
+    // Store relative path for cross-environment compatibility
     const report = new Report({
       orderId,
       uploadedBy: req.user.userId,
-      pdfPath: req.file.path,
+      pdfPath: toRelativePath(req.file.path),
       originalFileName: req.file.originalname,
       fileSize: req.file.size,
       status: 'uploaded'
@@ -111,9 +165,10 @@ const uploadMultiplePDFs = async (req, res) => {
 
         // Create new report record (orderId is optional now)
         // Note: Don't set orderId at all (not even to null) for sparse index to work
+        // Store relative path for cross-environment compatibility
         const report = new Report({
           uploadedBy: req.user.userId,
-          pdfPath: file.path,
+          pdfPath: toRelativePath(file.path),
           originalFileName: file.originalname,
           fileSize: file.size,
           status: 'uploaded'
@@ -289,9 +344,20 @@ const downloadPDF = async (req, res) => {
       });
     }
 
+    // SECURITY: Resolve path safely (handles both old absolute and new relative paths)
+    const resolvedPdfPath = resolvePdfPath(report.pdfPath);
+
+    if (!resolvedPdfPath) {
+      console.error('[REPORT CONTROLLER] Invalid PDF path (security block):', report.pdfPath);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid PDF path'
+      });
+    }
+
     // Check if file exists
-    if (!fs.existsSync(report.pdfPath)) {
-      console.error('[REPORT CONTROLLER] PDF file not found:', report.pdfPath);
+    if (!fs.existsSync(resolvedPdfPath)) {
+      console.error('[REPORT CONTROLLER] PDF file not found:', resolvedPdfPath);
       return res.status(404).json({
         success: false,
         message: 'PDF file not found on server'
@@ -305,7 +371,7 @@ const downloadPDF = async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${report.originalFileName}"`);
 
     // Stream the file
-    const fileStream = fs.createReadStream(report.pdfPath);
+    const fileStream = fs.createReadStream(resolvedPdfPath);
     fileStream.pipe(res);
   } catch (error) {
     console.error('[REPORT CONTROLLER] Download error:', error);
@@ -427,9 +493,11 @@ const deleteReport = async (req, res) => {
     }
 
     // Delete PDF file if it exists
-    if (fs.existsSync(report.pdfPath)) {
-      fs.unlinkSync(report.pdfPath);
-      console.log('[REPORT CONTROLLER] PDF file deleted:', report.pdfPath);
+    // SECURITY: Resolve path safely (handles both old absolute and new relative paths)
+    const resolvedPdfPath = resolvePdfPath(report.pdfPath);
+    if (resolvedPdfPath && fs.existsSync(resolvedPdfPath)) {
+      fs.unlinkSync(resolvedPdfPath);
+      console.log('[REPORT CONTROLLER] PDF file deleted:', resolvedPdfPath);
     }
 
     // Delete associated audit logs

@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const LabConfig = require('../models/LabConfig');
 const pLimit = require('p-limit');
+const { withRetry, sleep } = require('../utils/retryHelper');
 
 class GPT4oExtractorService {
   constructor() {
@@ -106,25 +107,32 @@ The pages in this lab report are provided in their original sequential order. Yo
       console.log('[GPT-4o VISION] 11. API call started at:', new Date(apiCallStartTime).toISOString());
       console.log('[GPT-4o VISION] 11a. Model config: temperature=0 (deterministic), max_tokens=4096');
 
-      // Call GPT-4o with vision support and deterministic configuration
-      const response = await this.getOpenAIClient().chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: prompt
-              },
-              ...imageMessages
-            ]
-          }
-        ],
-        temperature: 0,        // Deterministic (zero randomness)
-        max_tokens: 4096,      // Allow complete extraction
-        top_p: 1,             // Deterministic
-      });
+      // Call GPT-4o with vision support and deterministic configuration (with retry)
+      const response = await withRetry(
+        () => this.getOpenAIClient().chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: prompt
+                },
+                ...imageMessages
+              ]
+            }
+          ],
+          temperature: 0,        // Deterministic (zero randomness)
+          max_tokens: 4096,      // Allow complete extraction
+          top_p: 1,             // Deterministic
+        }),
+        {
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          operationName: 'GPT-4o extractFromImages API call'
+        }
+      );
 
       const apiCallEndTime = Date.now();
       const apiDuration = ((apiCallEndTime - apiCallStartTime) / 1000).toFixed(2);
@@ -404,25 +412,32 @@ The pages in this lab report are provided in their original sequential order. Yo
             const pagePayloadSize = imageData.length;
             console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.2. Page ${pageNumber} payload size:`, (pagePayloadSize / 1024 / 1024).toFixed(2), 'MB');
 
-            // Call GPT-4o for THIS page only
+            // Call GPT-4o for THIS page only (with retry)
             console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.3. Calling GPT-4o API for page ${pageNumber}...`);
             const apiCallStartTime = Date.now();
 
-            const response = await this.getOpenAIClient().chat.completions.create({
-              model: modelName,
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    { type: 'text', text: prompt },
-                    imageMessage
-                  ]
-                }
-              ],
-              temperature: 0,
-              max_tokens: 4096,
-              top_p: 1
-            });
+            const response = await withRetry(
+              () => this.getOpenAIClient().chat.completions.create({
+                model: modelName,
+                messages: [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'text', text: prompt },
+                      imageMessage
+                    ]
+                  }
+                ],
+                temperature: 0,
+                max_tokens: 4096,
+                top_p: 1
+              }),
+              {
+                maxRetries: 2,
+                baseDelayMs: 1000,
+                operationName: `GPT-4o page ${pageNumber} API call`
+              }
+            );
 
             const pageDuration = ((Date.now() - apiCallStartTime) / 1000).toFixed(2);
             console.log(`[GPT-4o PAGEWISE] 8.${pageNumber}.4. Page ${pageNumber} API call completed in ${pageDuration} seconds`);
@@ -554,7 +569,119 @@ The pages in this lab report are provided in their original sequential order. Yo
 
       // Execute all page processing concurrently
       console.log('[GPT-4o PAGEWISE] 9. Executing concurrent API calls...');
-      const pageResultsArray = await Promise.all(pagePromises);
+      let pageResultsArray = await Promise.all(pagePromises);
+
+      // Identify failed pages for retry
+      const failedPages = pageResultsArray.filter(p => p && p.error);
+      const retryStats = {
+        totalRetries: 0,
+        pagesRetried: [],
+        retriedSuccessfully: []
+      };
+
+      // Retry failed pages (max 2 rounds, reduced concurrency)
+      if (failedPages.length > 0) {
+        console.log(`[GPT-4o PAGEWISE] 9a. Retrying ${failedPages.length} failed pages...`);
+
+        for (let retryRound = 1; retryRound <= 2 && failedPages.length > 0; retryRound++) {
+          await sleep(2000); // Wait 2 seconds between retry rounds
+          console.log(`[GPT-4o PAGEWISE] 9b. Retry round ${retryRound} for ${failedPages.length} pages...`);
+
+          const retryLimit = pLimit(5); // Reduced concurrency for retries
+          const retryPromises = failedPages.map((failedPage) =>
+            retryLimit(async () => {
+              const pageNumber = failedPage.pageNumber;
+              const pageIndex = pageNumber - 1;
+              const base64Image = images[pageIndex];
+
+              if (!base64Image) return failedPage;
+
+              retryStats.totalRetries++;
+              retryStats.pagesRetried.push(pageNumber);
+
+              try {
+                console.log(`[GPT-4o PAGEWISE] 9c. Retrying page ${pageNumber}...`);
+                const imageMessage = {
+                  type: 'image_url',
+                  image_url: { url: `data:image/png;base64,${base64Image}` }
+                };
+
+                const response = await this.getOpenAIClient().chat.completions.create({
+                  model: modelName,
+                  messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, imageMessage] }],
+                  temperature: 0,
+                  max_tokens: 4096,
+                  top_p: 1
+                });
+
+                const responseText = response.choices[0].message.content;
+                const allLines = responseText.trim().split('\n').filter(l => l.trim().length > 0);
+                const lines = allLines.filter(l => l.includes('|'));
+                const pageResults = [];
+
+                for (const line of lines) {
+                  const parts = line.split('|').map(p => p.trim());
+                  if (parts.length >= 7) {
+                    pageResults.push({
+                      type: 'path',
+                      serviceItemName: parts[0],
+                      value: parts[1],
+                      unit: parts[2],
+                      method: parts[3],
+                      referenceRange: {
+                        high: parts[5] === 'null' ? null : parseFloat(parts[5]),
+                        low: parts[6] === 'null' ? null : parseFloat(parts[6]),
+                        referenceRange: parts[4]
+                      }
+                    });
+                  }
+                }
+
+                const usage = response.usage;
+                retryStats.retriedSuccessfully.push(pageNumber);
+                console.log(`[GPT-4o PAGEWISE] 9d. Page ${pageNumber} retry SUCCEEDED: ${pageResults.length} parameters`);
+
+                return {
+                  pageNumber,
+                  rawResponse: responseText,
+                  results: pageResults,
+                  labName: null,
+                  extractionMetadata: {
+                    responseLength: responseText.length,
+                    parametersExtracted: pageResults.length,
+                    inputTokens: usage.prompt_tokens,
+                    outputTokens: usage.completion_tokens,
+                    cost: (usage.prompt_tokens / 1000000) * 2.50 + (usage.completion_tokens / 1000000) * 10.00,
+                    wasRetried: true
+                  },
+                  extractedAt: new Date()
+                };
+              } catch (retryError) {
+                console.error(`[GPT-4o PAGEWISE] 9e. Page ${pageNumber} retry FAILED: ${retryError.message}`);
+                return failedPage;
+              }
+            })
+          );
+
+          const retryResults = await Promise.all(retryPromises);
+
+          // Update pageResultsArray with successful retries
+          for (const retryResult of retryResults) {
+            if (!retryResult.error) {
+              const idx = pageResultsArray.findIndex(p => p.pageNumber === retryResult.pageNumber);
+              if (idx !== -1) {
+                pageResultsArray[idx] = retryResult;
+              }
+            }
+          }
+
+          // Update failed pages list for next round
+          failedPages.length = 0;
+          failedPages.push(...retryResults.filter(r => r.error));
+        }
+
+        console.log(`[GPT-4o PAGEWISE] 9f. Retry complete: ${retryStats.retriedSuccessfully.length} pages recovered`);
+      }
 
       // Process results and aggregate data
       console.log('[GPT-4o PAGEWISE] 10. Aggregating results from all pages...');

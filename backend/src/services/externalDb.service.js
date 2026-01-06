@@ -58,18 +58,58 @@ class ExternalDbService {
 
   /**
    * Get observation by Order ID
+   * Logic:
+   * 1. If all documents have the same status → Pick the oldest (earliest g_creation_time)
+   * 2. If multiple different statuses exist → Filter to status="Final", then pick oldest
    * @param {string} orderId - The order ID to search for
    * @returns {Promise<Object|null>} Observation document or null if not found
    */
   async getObservationByOrderId(orderId) {
     const db = await this.connect();
     console.log('[EXTERNAL DB] Querying observation for orderId:', orderId);
-    const obs = await db.collection('observation').findOne(
-      { orderId: orderId },
-      { sort: { g_creation_time: 1 } }
-    );
-    console.log('[EXTERNAL DB] Query result:', obs ? 'Found' : 'Not found');
-    return obs;
+
+    // Get all documents for this orderId, sorted by g_creation_time ascending (oldest first)
+    const allDocs = await db.collection('observation')
+      .find({ orderId: orderId })
+      .sort({ g_creation_time: 1 })
+      .toArray();
+
+    if (allDocs.length === 0) {
+      console.log('[EXTERNAL DB] Query result: Not found');
+      return null;
+    }
+
+    console.log('[EXTERNAL DB] Found', allDocs.length, 'documents for orderId:', orderId);
+
+    // If only one document, return it
+    if (allDocs.length === 1) {
+      console.log('[EXTERNAL DB] Single document found, returning it');
+      return allDocs[0];
+    }
+
+    // Check if all documents have the same status
+    const statuses = [...new Set(allDocs.map(doc => doc.status))];
+    console.log('[EXTERNAL DB] Unique statuses found:', statuses);
+
+    if (statuses.length === 1) {
+      // All documents have the same status - return the oldest
+      console.log('[EXTERNAL DB] All documents have same status, returning oldest');
+      return allDocs[0]; // Already sorted by g_creation_time ascending
+    }
+
+    // Multiple statuses exist - filter to "Final" status only
+    const finalDocs = allDocs.filter(doc => doc.status === 'Final');
+    console.log('[EXTERNAL DB] Multiple statuses found, filtering to "Final":', finalDocs.length, 'documents');
+
+    if (finalDocs.length > 0) {
+      // Return the oldest document with status "Final"
+      console.log('[EXTERNAL DB] Returning oldest document with status "Final"');
+      return finalDocs[0]; // Already sorted by g_creation_time ascending
+    }
+
+    // No "Final" status documents found - fall back to oldest overall
+    console.log('[EXTERNAL DB] No "Final" status documents found, returning oldest overall');
+    return allDocs[0];
   }
 
   /**

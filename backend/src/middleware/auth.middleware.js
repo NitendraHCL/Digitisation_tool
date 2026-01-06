@@ -141,8 +141,32 @@ const isNurseOrAdmin = (req, res, next) => {
   next();
 };
 
+// Check if user is super admin only
+const isSuperAdmin = (req, res, next) => {
+  console.log('[AUTH MIDDLEWARE] Checking super_admin role for:', req.user?.email);
+
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  if (req.user.role !== 'super_admin') {
+    console.log('[AUTH MIDDLEWARE] Access denied. User role:', req.user.role);
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Super Admin role required.'
+    });
+  }
+
+  console.log('[AUTH MIDDLEWARE] Super Admin access granted');
+  next();
+};
+
 module.exports = {
   authenticate,
   isAdmin,
-  isNurseOrAdmin
+  isNurseOrAdmin,
+  isSuperAdmin
 };

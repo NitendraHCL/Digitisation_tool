@@ -1,5 +1,6 @@
 const ParameterMaster = require('../models/ParameterMaster');
 const ParameterExclusion = require('../models/ParameterExclusion');
+const audit = require('../utils/auditLogger');
 
 /**
  * Parameter Validation Service
@@ -11,10 +12,16 @@ class ParameterValidatorService {
   /**
    * Validate all parameters in extracted data against Parameter Master
    * @param {Object} extractedData - Extracted report data with results array
+   * @param {string} requestId - Request ID for audit logging
    * @returns {Object} - { validationFlags: [...], summary: {...} }
    */
-  async validateAgainstMaster(extractedData) {
+  async validateAgainstMaster(extractedData, requestId = null) {
+    const startTime = Date.now();
+
     if (!extractedData || !extractedData.results || extractedData.results.length === 0) {
+      if (requestId) {
+        audit.logWarning(requestId, 'No parameters to validate');
+      }
       return {
         validationFlags: [],
         summary: {
@@ -27,8 +34,9 @@ class ParameterValidatorService {
       };
     }
 
-    console.log('[VALIDATOR] Starting validation against Parameter Master...');
-    console.log('[VALIDATOR] Parameters to validate:', extractedData.results.length);
+    const reqId = requestId || 'N/A';
+    console.log(`[${reqId}] [VALIDATOR] Starting validation against Parameter Master...`);
+    console.log(`[${reqId}] [VALIDATOR] Parameters to validate:`, extractedData.results.length);
 
     const validationFlags = [];
     const summary = {
@@ -175,13 +183,28 @@ class ParameterValidatorService {
       }
     }
 
-    console.log('[VALIDATOR] Validation complete:');
-    console.log('[VALIDATOR] - Total parameters:', summary.total);
-    console.log('[VALIDATOR] - Not found in master:', summary.parameterNotFound);
-    console.log('[VALIDATOR] - Unit mismatches:', summary.unitMismatch);
-    console.log('[VALIDATOR] - Value type mismatches:', summary.valueTypeMismatch);
-    console.log('[VALIDATOR] - Excluded parameters:', summary.excluded);
-    console.log('[VALIDATOR] - Total flags:', validationFlags.length);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(3);
+
+    console.log(`[${reqId}] [VALIDATOR] ════════════════════════════════════════`);
+    console.log(`[${reqId}] [VALIDATOR] ✅ Validation Complete in ${duration}s`);
+    console.log(`[${reqId}] [VALIDATOR] ════════════════════════════════════════`);
+    console.log(`[${reqId}] [VALIDATOR] 📊 Summary:`);
+    console.log(`[${reqId}] [VALIDATOR]    - Total parameters: ${summary.total}`);
+    console.log(`[${reqId}] [VALIDATOR]    - Not found: ${summary.parameterNotFound}`);
+    console.log(`[${reqId}] [VALIDATOR]    - Unit mismatches: ${summary.unitMismatch}`);
+    console.log(`[${reqId}] [VALIDATOR]    - Value type mismatches: ${summary.valueTypeMismatch}`);
+    console.log(`[${reqId}] [VALIDATOR]    - Excluded: ${summary.excluded}`);
+    console.log(`[${reqId}] [VALIDATOR]    - Total flags: ${validationFlags.length}`);
+    console.log(`[${reqId}] [VALIDATOR] ════════════════════════════════════════`);
+
+    if (requestId) {
+      audit.logStep(requestId, 'VALIDATOR_SUMMARY', {
+        status: 'success',
+        duration: parseFloat(duration),
+        count: validationFlags.length,
+        message: `Total: ${summary.total} | NotFound: ${summary.parameterNotFound} | UnitMismatch: ${summary.unitMismatch} | Excluded: ${summary.excluded}`
+      });
+    }
 
     return {
       validationFlags,

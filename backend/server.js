@@ -120,6 +120,22 @@ if (!fs.existsSync(tempDir)) {
   console.log('[SERVER] ✓ Temp directory exists');
 }
 
+// Initialize log directories for file-based logging
+console.log('[SERVER] Setting up log directories...');
+const auditLogger = require('./src/utils/auditLogger');
+if (auditLogger.ensureLogDirectories()) {
+  console.log('[SERVER] ✓ Log directories created:');
+  console.log('[SERVER]   - Processing logs:', auditLogger.PROCESSING_LOG_DIR);
+  console.log('[SERVER]   - Error logs:', auditLogger.ERROR_LOG_DIR);
+} else {
+  console.log('[SERVER] ⚠️  Warning: Could not create log directories');
+}
+
+// Run log cleanup on startup (delete logs older than retention period)
+console.log('[SERVER] Running log cleanup...');
+const deletedLogs = auditLogger.cleanupOldLogs();
+console.log(`[SERVER] ✓ Log cleanup complete (${deletedLogs} old files removed)`)
+
 // Request logging middleware (custom)
 console.log('[SERVER] Setting up custom request logging middleware...');
 app.use((req, res, next) => {

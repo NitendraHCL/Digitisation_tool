@@ -8,6 +8,29 @@ const thresholdChecker = require('../services/thresholdChecker.service');
 const parameterValidator = require('../services/parameterValidator.service');
 const LabConfig = require('../models/LabConfig');
 const pLimit = require('p-limit');
+const audit = require('../utils/auditLogger');
+const path = require('path');
+const { withRetry } = require('../utils/retryHelper');
+
+// Base uploads directory - used for path resolution
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+
+/**
+ * Resolve PDF path - handles both old absolute paths and new relative paths
+ * @param {string} storedPath - Path stored in database (could be absolute or relative)
+ * @returns {string|null} - Resolved path or null if invalid
+ */
+const resolvePdfPath = (storedPath) => {
+  if (!storedPath) return null;
+
+  // Check if it's already an absolute path (old format)
+  if (path.isAbsolute(storedPath)) {
+    return path.resolve(storedPath);
+  }
+
+  // Relative path (new format) - resolve against uploads directory
+  return path.resolve(UPLOADS_DIR, storedPath);
+};
 
 /**
  * Internal function to process a single report
@@ -19,14 +42,33 @@ const pLimit = require('p-limit');
 async function processReportInternal(reportId, extractionMethod = null, model = null) {
   const overallStartTime = Date.now();
 
-  // Fetch defaults from LabConfig if not provided
+  // Start audit session
+  const requestId = audit.startAuditSession(reportId);
+
+  // Fetch defaults from LabConfig if not provided (with retry)
+  const configStartTime = Date.now();
   if (!extractionMethod || !model) {
-    console.log('[PROCESS] Fetching default processing settings from LabConfig...');
-    const labConfig = await LabConfig.getConfig();
+    audit.logStep(requestId, 'FETCH_CONFIG', { status: 'started' });
+    const labConfig = await withRetry(
+      () => LabConfig.getConfig(),
+      {
+        maxRetries: 2,
+        baseDelayMs: 500,
+        operationName: 'LabConfig fetch'
+      }
+    );
     extractionMethod = extractionMethod || labConfig.systemConfig.defaultExtractionMethod || 'image';
     model = model || labConfig.systemConfig.defaultModel || 'gemini-2.5-flash';
-    console.log('[PROCESS] Using defaults - Method:', extractionMethod, ', Model:', model);
+    audit.logStep(requestId, 'FETCH_CONFIG', {
+      status: 'success',
+      duration: (Date.now() - configStartTime) / 1000,
+      message: `Method: ${extractionMethod}, Model: ${model}`
+    });
   }
+
+  audit.logStep(requestId, 'PIPELINE_START', {
+    message: `Method: ${extractionMethod.toUpperCase()}, Model: ${model.toUpperCase()}`
+  });
 
   console.log('[PROCESS] ========================================');
   console.log('[PROCESS] 🚀 STARTING REPORT PROCESSING PIPELINE');
@@ -35,40 +77,87 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
   console.log('[PROCESS] 2. Extraction Method:', extractionMethod.toUpperCase());
   console.log('[PROCESS] 2a. LLM Model:', model.toUpperCase());
   console.log('[PROCESS] 3. Started at:', new Date().toISOString());
+  console.log('[PROCESS] 4. Request ID:', requestId);
 
   // Validate extraction method
   if (!['text', 'image', 'hybrid', 'pdf'].includes(extractionMethod)) {
+    audit.logError(requestId, 'VALIDATION_ERROR', 'Invalid extraction method');
+    audit.endAuditSession(requestId, 'error');
     throw new Error('Invalid extraction method. Must be "text", "image", "hybrid", or "pdf"');
   }
 
-  // Get report from database
+  // Get report from database (with retry)
+  const dbFetchStart = Date.now();
+  audit.logStep(requestId, 'DB_FETCH_REPORT', { status: 'started' });
   console.log('[PROCESS] 4. Fetching report from database...');
-  const report = await Report.findById(reportId);
+  const report = await withRetry(
+    () => Report.findById(reportId),
+    {
+      maxRetries: 2,
+      baseDelayMs: 500,
+      operationName: 'Report DB fetch'
+    }
+  );
+  const dbFetchDuration = (Date.now() - dbFetchStart) / 1000;
 
   if (!report) {
+    audit.logError(requestId, 'DB_ERROR', 'Report not found in database');
+    audit.endAuditSession(requestId, 'error');
     console.error('[PROCESS] ERROR: Report not found in database');
     throw new Error('Report not found');
   }
 
+  audit.logStep(requestId, 'DB_FETCH_REPORT', {
+    status: 'success',
+    duration: dbFetchDuration,
+    message: `Order: ${report.orderId}, Status: ${report.status}`
+  });
+
   console.log('[PROCESS] 5. ✓ Report found');
+
+  // Resolve PDF path (handles both old absolute and new relative paths)
+  const resolvedPdfPath = resolvePdfPath(report.pdfPath);
+  if (!resolvedPdfPath) {
+    audit.logError(requestId, 'PATH_ERROR', 'Invalid PDF path stored in database');
+    audit.endAuditSession(requestId, 'error');
+    console.error('[PROCESS] ERROR: Invalid PDF path:', report.pdfPath);
+    throw new Error('Invalid PDF path');
+  }
+
   console.log('[PROCESS] 6. Report details:');
   console.log('[PROCESS]    - Order ID:', report.orderId);
-  console.log('[PROCESS]    - PDF Path:', report.pdfPath);
+  console.log('[PROCESS]    - PDF Path (stored):', report.pdfPath);
+  console.log('[PROCESS]    - PDF Path (resolved):', resolvedPdfPath);
   console.log('[PROCESS]    - Current status:', report.status);
   console.log('[PROCESS]    - Uploaded by:', report.uploadedBy);
   console.log('[PROCESS]    - Uploaded at:', report.createdAt);
 
   // Check if already processed
   if (report.status !== 'uploaded') {
+    audit.logWarning(requestId, `Report already processed: ${report.status}`);
+    audit.endAuditSession(requestId, 'skipped');
     console.warn('[PROCESS] WARNING: Report already processed, current status:', report.status);
     throw new Error(`Report is already ${report.status}`);
   }
 
-  // Update status to processing
+  // Update status to processing (with retry)
+  const statusUpdateStart = Date.now();
+  audit.logStep(requestId, 'STATUS_UPDATE', { status: 'started', message: 'Setting to processing' });
   console.log('[PROCESS] 7. Updating status to "processing"...');
   report.status = 'processing';
   report.extractionMethod = extractionMethod;
-  await report.save();
+  await withRetry(
+    () => report.save(),
+    {
+      maxRetries: 2,
+      baseDelayMs: 500,
+      operationName: 'Report status update'
+    }
+  );
+  audit.logStep(requestId, 'STATUS_UPDATE', {
+    status: 'success',
+    duration: (Date.now() - statusUpdateStart) / 1000
+  });
   console.log('[PROCESS] 8. ✓ Status updated');
 
   // Initialize processing metadata
@@ -108,7 +197,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       console.log('[PROCESS] ========================================');
 
       const pdfStartTime = Date.now();
-      const pdfData = await pdfTextExtractor.extractText(report.pdfPath);
+      const pdfData = await pdfTextExtractor.extractText(resolvedPdfPath);
       pdfDuration = (Date.now() - pdfStartTime) / 1000;
       metadata.textExtractionTime = pdfDuration;
       metadata.pdfPages = Array.isArray(pdfData.pages) ? pdfData.pages.length : pdfData.pages;
@@ -156,38 +245,72 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
         'gemini-2.0-flash': 'GEMINI 2.0 FLASH VISION'
       };
       const modelName = modelDisplayNames[model] || 'GEMINI 2.5 FLASH VISION';
+
+      audit.logStep(requestId, 'IMAGE_EXTRACTION_START', {
+        message: `Model: ${modelName}`
+      });
+
       console.log('[PROCESS] ========================================');
       console.log('[PROCESS] 🖼️  METHOD: IMAGE-BASED EXTRACTION (' + modelName + ')');
       console.log('[PROCESS] ========================================');
 
+      // PDF to Image Conversion
       const imgStartTime = Date.now();
-      const images = await pdfConverter.convertToImages(report.pdfPath);
+      audit.logStep(requestId, 'PDF_TO_IMAGE_START', { status: 'started' });
+
+      const pdfResult = await pdfConverter.convertToImages(resolvedPdfPath, requestId);
+      const images = pdfResult.images;
+      const pdfTimings = pdfResult.pdfTimings;
       const imgDuration = (Date.now() - imgStartTime) / 1000;
       metadata.imageConversionTime = imgDuration;
       metadata.pdfPages = images.length;
       metadata.imagesGenerated = images.length;
 
+      // Store PDF timings for audit
+      if (pdfTimings) {
+        audit.storePdfTimings(requestId, pdfTimings);
+      }
+
+      audit.logStep(requestId, 'PDF_TO_IMAGE_COMPLETE', {
+        status: 'success',
+        duration: imgDuration,
+        count: images.length,
+        size: `${(images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024).toFixed(2)}MB`
+      });
+
       console.log('[PROCESS] 9. ✓ Image conversion completed in', imgDuration.toFixed(2), 'seconds');
       console.log('[PROCESS]    - Pages converted:', images.length);
 
       if (!images || images.length === 0) {
+        audit.logError(requestId, 'PDF_CONVERSION_ERROR', 'Failed to convert PDF to images');
         throw new Error('Failed to convert PDF to images');
       }
 
+      // LLM Processing
       console.log('[PROCESS] 10. Calling', modelName, 'with images (PAGE-BY-PAGE)...');
       const gptStartTime = Date.now();
+      audit.logStep(requestId, 'LLM_EXTRACTION_START', {
+        message: `${modelName} - ${images.length} pages - 15 concurrent`
+      });
 
       // Route to appropriate model - USING PAGE-WISE EXTRACTION (15 parallel API calls)
       if (model === 'gpt-4o' || model === 'gpt-4.1') {
         const gptModel = model === 'gpt-4.1' ? 'gpt-4.1-2025-04-14' : 'gpt-4o';
-        extractedData = await gpt4oExtractor.extractFromImagesPageWise(images, report.orderId, gptModel);
+        extractedData = await gpt4oExtractor.extractFromImagesPageWise(images, report.orderId, gptModel, requestId);
       } else {
         // Pass the specific Gemini model variant
         const geminiModel = model === 'gemini' ? 'gemini-2.5-flash' : model;
-        extractedData = await geminiExtractor.extractFromImagesPageWise(images, report.orderId, geminiModel);
+        extractedData = await geminiExtractor.extractFromImagesPageWise(images, report.orderId, geminiModel, requestId);
       }
 
       metadata.gptProcessingTime = (Date.now() - gptStartTime) / 1000;
+
+      audit.logStep(requestId, 'LLM_EXTRACTION_COMPLETE', {
+        status: 'success',
+        duration: metadata.gptProcessingTime,
+        count: extractedData.results?.length || 0,
+        message: `Lab: ${extractedData.labName}, Params: ${extractedData.results?.length || 0}`
+      });
 
       // Capture token usage data
       if (extractedData.tokenUsage) {
@@ -195,6 +318,16 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
         metadata.completionTokens = extractedData.tokenUsage.completionTokens;
         metadata.totalTokens = extractedData.tokenUsage.totalTokens;
         metadata.estimatedCost = extractedData.tokenUsage.estimatedCost;
+
+        audit.logApiCall(requestId, 'GEMINI_PAGEWISE', {
+          duration: metadata.gptProcessingTime,
+          tokens: {
+            input: metadata.promptTokens,
+            output: metadata.completionTokens,
+            total: metadata.totalTokens
+          },
+          cost: metadata.estimatedCost
+        });
       }
 
     } else if (extractionMethod === 'hybrid') {
@@ -209,7 +342,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       let pdfData;
 
       try {
-        pdfData = await pdfTextExtractor.extractText(report.pdfPath);
+        pdfData = await pdfTextExtractor.extractText(resolvedPdfPath);
         const textDuration = (Date.now() - textStartTime) / 1000;
         metadata.textExtractionTime = textDuration;
         metadata.pdfPages = Array.isArray(pdfData.pages) ? pdfData.pages.length : pdfData.pages;
@@ -248,7 +381,8 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
         // Fall back to image-based extraction
         console.log('[PROCESS] 12. Converting PDF to images...');
         const imgStartTime = Date.now();
-        const images = await pdfConverter.convertToImages(report.pdfPath);
+        const pdfResult = await pdfConverter.convertToImages(resolvedPdfPath);
+        const images = pdfResult.images;
         const imgDuration = (Date.now() - imgStartTime) / 1000;
         metadata.imageConversionTime = imgDuration;
         metadata.imagesGenerated = images.length;
@@ -297,7 +431,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       console.log('[PROCESS] ========================================');
 
       const pdfStartTime = Date.now();
-      extractedData = await gptExtractor.extractFromPDF(report.pdfPath, report.orderId);
+      extractedData = await gptExtractor.extractFromPDF(resolvedPdfPath, report.orderId);
       metadata.gptProcessingTime = (Date.now() - pdfStartTime) / 1000;
       metadata.method = 'pdf';
 
@@ -384,11 +518,20 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
     console.log('[PROCESS] ========================================');
 
     const validationStartTime = Date.now();
+    audit.logStep(requestId, 'PARAMETER_VALIDATION_START', { status: 'started' });
 
     // Validate extracted data against Parameter Master
-    const validation = await parameterValidator.validateAgainstMaster(extractedData);
+    const validation = await parameterValidator.validateAgainstMaster(extractedData, requestId);
 
     const validationDuration = ((Date.now() - validationStartTime) / 1000).toFixed(2);
+
+    audit.logStep(requestId, 'PARAMETER_VALIDATION_COMPLETE', {
+      status: 'success',
+      duration: parseFloat(validationDuration),
+      count: validation.validationFlags.length,
+      message: `Total: ${validation.summary.total}, NotFound: ${validation.summary.parameterNotFound}, UnitMismatch: ${validation.summary.unitMismatch}`
+    });
+
     console.log('[PROCESS] 16. ✓ Parameter validation completed in', validationDuration, 'seconds');
     console.log('[PROCESS] 16a. Validation summary:');
     console.log('[PROCESS]    - Total parameters:', validation.summary.total);
@@ -402,6 +545,7 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
     console.log('[PROCESS] ========================================');
 
     const dbSaveStartTime = Date.now();
+    audit.logStep(requestId, 'DB_SAVE_START', { status: 'started' });
     console.log('[PROCESS] 13a. Preparing report data for database save...');
 
     // Update report with extracted data
@@ -576,6 +720,12 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
 
     const totalDuration = ((Date.now() - overallStartTime) / 1000).toFixed(2);
 
+    audit.logStep(requestId, 'DB_SAVE_COMPLETE', {
+      status: 'success',
+      duration: dbTotalDuration / 1000,
+      message: `MongoDB save: ${mongoSaveDuration}ms`
+    });
+
     console.log('[PROCESS] 16. ✓ Report saved to database');
     console.log('[PROCESS] ========================================');
     console.log('[PROCESS] ✅ PROCESSING COMPLETE');
@@ -614,6 +764,9 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
     console.log('[PROCESS] Total pipeline time:', totalDuration + 's');
     console.log('[PROCESS] ========================================');
 
+    // End audit session with success
+    audit.endAuditSession(requestId, 'success');
+
     // Return processed data
     return {
       reportId: report._id,
@@ -642,10 +795,76 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
   } catch (processingError) {
     const errorDuration = ((Date.now() - overallStartTime) / 1000).toFixed(2);
 
+    // Categorize the error type for comprehensive logging
+    const isValidationError =
+      processingError.name === 'ValidationError' ||
+      processingError.message.includes('validation');
+
+    const isDatabaseError =
+      processingError.name === 'MongoError' ||
+      processingError.name === 'MongoServerError' ||
+      processingError.message.includes('E11000') ||
+      processingError.message.includes('duplicate key');
+
+    const isApiError =
+      processingError.message.includes('429') ||
+      processingError.message.includes('RESOURCE_EXHAUSTED') ||
+      processingError.message.includes('rate limit');
+
+    const isPdfError =
+      processingError.message.includes('PDF') ||
+      processingError.message.includes('GraphicsMagick');
+
+    const isNetworkError =
+      processingError.code === 'ECONNRESET' ||
+      processingError.code === 'ETIMEDOUT' ||
+      processingError.message.includes('network');
+
+    // Determine error category
+    let errorCategory = 'PROCESSING_ERROR';
+    if (isValidationError) errorCategory = 'VALIDATION_ERROR';
+    else if (isDatabaseError) errorCategory = 'DATABASE_ERROR';
+    else if (isApiError) errorCategory = 'API_RATE_LIMIT';
+    else if (isPdfError) errorCategory = 'PDF_PROCESSING_ERROR';
+    else if (isNetworkError) errorCategory = 'NETWORK_ERROR';
+
+    // Build comprehensive error context
+    const errorContext = {
+      step: 'MAIN_PIPELINE',
+      operation: 'processReportInternal',
+      duration: parseFloat(errorDuration),
+      code: processingError.code,
+      retryable: isApiError || isNetworkError,
+      context: {
+        reportId,
+        extractionMethod,
+        model,
+        isValidationError,
+        isDatabaseError,
+        isApiError,
+        isPdfError,
+        isNetworkError
+      }
+    };
+
+    // Add validation error details if applicable
+    if (isValidationError && processingError.errors) {
+      errorContext.validationErrors = Object.keys(processingError.errors).map(field => ({
+        field,
+        kind: processingError.errors[field]?.kind,
+        value: processingError.errors[field]?.value,
+        message: processingError.errors[field]?.message
+      }));
+    }
+
+    // Log error to audit with comprehensive context
+    audit.logError(requestId, errorCategory, processingError, errorContext);
+
     console.error('[PROCESS] ========================================');
     console.error('[PROCESS] ❌ PROCESSING FAILED');
     console.error('[PROCESS] ========================================');
     console.error('[PROCESS] ERROR: Processing error after', errorDuration, 'seconds');
+    console.error('[PROCESS] ERROR: Category:', errorCategory);
     console.error('[PROCESS] ERROR: Type:', processingError.constructor.name);
     console.error('[PROCESS] ERROR: Message:', processingError.message);
     console.error('[PROCESS] ERROR: Stack:', processingError.stack);
@@ -674,6 +893,9 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       }
     }
     console.error('[PROCESS] ========================================');
+
+    // End audit session with error
+    audit.endAuditSession(requestId, 'error');
 
     throw processingError;
   }
