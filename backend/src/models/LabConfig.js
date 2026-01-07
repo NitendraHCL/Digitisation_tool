@@ -95,6 +95,11 @@ const labConfigSchema = new mongoose.Schema({
       type: String,
       enum: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gpt-4o', 'gpt-4.1'],
       default: 'gemini-2.5-flash'
+    },
+    // Bulk upload control
+    disableBulkUpload: {
+      type: Boolean,
+      default: false
     }
   },
 

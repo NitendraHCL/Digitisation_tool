@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getConfig,
+  getUploadConfig,
   updateConfig,
   updateLabNames,
   updateThresholds,
@@ -14,7 +15,10 @@ const {
 } = require('../controllers/labConfig.controller');
 const { authenticate, isAdmin } = require('../middleware/auth.middleware');
 
-// All lab config routes require admin authentication
+// Public route for upload config (accessible to all authenticated users)
+router.get('/upload-config', authenticate, getUploadConfig);
+
+// All other lab config routes require admin authentication
 router.use(authenticate);
 router.use(isAdmin);
 

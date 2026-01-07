@@ -81,6 +81,7 @@ interface SystemConfig {
   auditLogEnabled: boolean;
   defaultExtractionMethod?: string;
   defaultModel?: string;
+  disableBulkUpload: boolean;
 }
 
 const ConfigurationManagement: React.FC = () => {
@@ -103,6 +104,7 @@ const ConfigurationManagement: React.FC = () => {
     defaultExtractionMethod: 'image',
     defaultModel: 'gemini-2.5-flash',
     auditLogEnabled: true,
+    disableBulkUpload: false,
   });
 
   const [labs, setLabs] = useState<LabConfig[]>([
@@ -600,6 +602,20 @@ const ConfigurationManagement: React.FC = () => {
                 }
               }}
             />
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, height: '40px', bgcolor: '#FEF3C7', borderRadius: 1.5, border: '1px solid #F59E0B' }}>
+              <Typography variant="body2" sx={{ fontSize: '13px', color: '#92400E', fontWeight: 500 }}>
+                Disable Bulk Upload
+              </Typography>
+              <Switch
+                checked={systemConfig.disableBulkUpload}
+                onChange={(e) => setSystemConfig(prev => ({ ...prev, disableBulkUpload: e.target.checked }))}
+                size="small"
+                color="warning"
+              />
+            </Box>
           </Grid>
 
           {/* Processing Defaults Section */}

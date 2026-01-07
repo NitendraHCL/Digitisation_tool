@@ -437,6 +437,9 @@ const updateSystemConfig = async (req, res) => {
     if (systemConfig.defaultModel !== undefined) {
       config.systemConfig.defaultModel = systemConfig.defaultModel;
     }
+    if (systemConfig.disableBulkUpload !== undefined) {
+      config.systemConfig.disableBulkUpload = systemConfig.disableBulkUpload;
+    }
 
     config.updatedBy = req.user.userId;
     await config.save();
@@ -517,8 +520,30 @@ const updateConfig = async (req, res) => {
   }
 };
 
+// Get upload configuration (accessible to all authenticated users)
+const getUploadConfig = async (req, res) => {
+  try {
+    const config = await LabConfig.getConfig();
+
+    res.json({
+      success: true,
+      data: {
+        disableBulkUpload: config.systemConfig?.disableBulkUpload || false,
+        maxFileSize: config.systemConfig?.maxFileSize || 10
+      }
+    });
+  } catch (error) {
+    console.error('[LAB CONFIG CONTROLLER] Get upload config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch upload configuration'
+    });
+  }
+};
+
 module.exports = {
   getConfig,
+  getUploadConfig,
   updateConfig,
   updateLabNames,
   updateThresholds,

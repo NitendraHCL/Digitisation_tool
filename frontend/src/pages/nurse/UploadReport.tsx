@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -34,6 +34,22 @@ const UploadReport: React.FC = () => {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [batchStartTime, setBatchStartTime] = useState<number | null>(null);
   const [currentElapsedTime, setCurrentElapsedTime] = useState<number>(0);
+  const [bulkUploadDisabled, setBulkUploadDisabled] = useState(false);
+
+  // Fetch config to check if bulk upload is disabled
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await api.get('/lab-config/upload-config');
+        if (response.data.success) {
+          setBulkUploadDisabled(response.data.data.disableBulkUpload || false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch upload config:', error);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   React.useEffect(() => {
     if (batchStartTime && processing) {
@@ -55,16 +71,19 @@ const UploadReport: React.FC = () => {
       const pdfFiles = acceptedFiles.filter((file) => file.type === 'application/pdf');
 
       if (pdfFiles.length > 0) {
-        setFiles(pdfFiles);
+        // If bulk upload is disabled, only take the first file
+        const filesToUse = bulkUploadDisabled ? [pdfFiles[0]] : pdfFiles;
+
+        setFiles(filesToUse);
         setActiveStep(1);
-        enqueueSnackbar(`${pdfFiles.length} PDF file(s) selected successfully`, {
+        enqueueSnackbar(`${filesToUse.length} PDF file(s) selected successfully`, {
           variant: 'success',
         });
       } else {
         enqueueSnackbar('Please upload PDF files only', { variant: 'error' });
       }
     },
-    [enqueueSnackbar]
+    [enqueueSnackbar, bulkUploadDisabled]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -72,7 +91,8 @@ const UploadReport: React.FC = () => {
     accept: {
       'application/pdf': ['.pdf'],
     },
-    multiple: true,
+    multiple: !bulkUploadDisabled,
+    maxFiles: bulkUploadDisabled ? 1 : undefined,
     maxSize: 30 * 1024 * 1024,
   });
 
@@ -349,7 +369,7 @@ const UploadReport: React.FC = () => {
           {/* STEP 1: File Selection */}
           {activeStep === 0 && (
             <div>
-              <DropZone onDrop={onDrop} multiple maxSize={30 * 1024 * 1024} />
+              <DropZone onDrop={onDrop} multiple={!bulkUploadDisabled} maxSize={30 * 1024 * 1024} />
             </div>
           )}
 
