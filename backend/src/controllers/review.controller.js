@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const { Long } = require('bson');  // For Int64 timestamp storage
 const Report = require('../models/Report');
 const thresholdChecker = require('../services/thresholdChecker.service');
 const LabConfig = require('../models/LabConfig');
@@ -1541,7 +1542,7 @@ const publishReport = async (req, res) => {
         payer_id: obs.payer_id || "",
         payer_name: obs.payer_name || "",
         payer_type: obs.payer_type || "",
-        orderDateTime: obs.orderDateTime ?? null,
+        orderDateTime: obs.orderDateTime != null ? Long.fromNumber(obs.orderDateTime) : null,
         telecom: obs.telecom || "",
         center_type_name: obs.center_type_name || "",
         package_id: obs.package_id || "",
@@ -1705,8 +1706,8 @@ const publishReport = async (req, res) => {
         ...apiPart,
         id: rowId,
         _id: rowId,
-        g_creation_time: Date.now(),
-        g_modify_time: Date.now()
+        g_creation_time: Long.fromNumber(Date.now()),
+        g_modify_time: Long.fromNumber(Date.now())
       };
 
       allResults.push(finalRow);
