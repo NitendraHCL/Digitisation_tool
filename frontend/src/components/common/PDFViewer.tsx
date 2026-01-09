@@ -253,12 +253,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl, currentPage = 1, totalPag
               onLoad={handleLoad}
               onError={handleError}
               style={{
-                width: `${zoom}%`,
-                height: `${zoom}%`,
+                width: '100%',
+                height: '100%',
                 border: 'none',
+                transform: `scale(${zoom / 100})`,
                 transformOrigin: 'top left',
-                minWidth: '100%',
-                minHeight: '100%',
               }}
             />
           </Box>
