@@ -53,31 +53,41 @@ parameterExclusionSchema.index({ isActive: 1, excludedAt: -1 });
 
 // Static method to check if a parameter is excluded
 parameterExclusionSchema.statics.isExcluded = async function(parameterName, unit = null, labName = null) {
-  const query = {
-    excludedParameter: new RegExp(`^${parameterName}$`, 'i'),
-    isActive: true
-  };
+  try {
+    // Escape special regex characters for safe matching (same as ParameterMaster.js:87)
+    const escapedParamName = parameterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // Check for exact unit match or general exclusion (unit = null)
-  if (unit) {
-    query.$or = [
-      { unit: null }, // General exclusion for this parameter
-      { unit: new RegExp(`^${unit}$`, 'i') } // Specific unit exclusion
-    ];
-  } else {
-    query.unit = null; // Only match general exclusions when no unit provided
+    const query = {
+      excludedParameter: new RegExp(`^${escapedParamName}$`, 'i'),
+      isActive: true
+    };
+
+    // Check for exact unit match or general exclusion (unit = null)
+    if (unit) {
+      const escapedUnit = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { unit: null }, // General exclusion for this parameter
+        { unit: new RegExp(`^${escapedUnit}$`, 'i') } // Specific unit exclusion
+      ];
+    } else {
+      query.unit = null; // Only match general exclusions when no unit provided
+    }
+
+    // Check for lab-specific exclusion or general exclusion
+    if (labName) {
+      const escapedLabName = labName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { labName: null }, // General exclusion for all labs
+        { labName: new RegExp(`^${escapedLabName}$`, 'i') } // Specific lab exclusion
+      ];
+    }
+
+    const exclusion = await this.findOne(query);
+    return exclusion ? { isExcluded: true, reason: exclusion.reason } : { isExcluded: false };
+  } catch (error) {
+    console.error('[PARAMETER_EXCLUSION] Error checking exclusion:', error.message, 'for:', parameterName);
+    return { isExcluded: false, error: error.message };
   }
-
-  // Check for lab-specific exclusion or general exclusion
-  if (labName) {
-    query.$or = [
-      { labName: null }, // General exclusion for all labs
-      { labName: new RegExp(`^${labName}$`, 'i') } // Specific lab exclusion
-    ];
-  }
-
-  const exclusion = await this.findOne(query);
-  return exclusion ? { isExcluded: true, reason: exclusion.reason } : { isExcluded: false };
 };
 
 // Static method to get all active exclusions
