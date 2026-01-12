@@ -454,7 +454,7 @@ const updateReport = async (req, res) => {
   }
 };
 
-// Delete report (admin only)
+// Delete report (admin or nurse with restrictions)
 const deleteReport = async (req, res) => {
   try {
     const { id } = req.params;
@@ -471,25 +471,38 @@ const deleteReport = async (req, res) => {
       });
     }
 
-    // Check if report is approved
-    if (report.status === 'approved') {
-      console.log('[REPORT CONTROLLER] Cannot delete approved report');
-      return res.status(403).json({
-        success: false,
-        message: 'Cannot delete approved reports'
-      });
-    }
-
-    // Check ownership: Admin can delete any, nurses can only delete their own
+    // Check ownership and permissions
     const isAdmin = userRole === 'admin' || userRole === 'super_admin';
     const isOwner = report.uploadedBy.toString() === userId;
 
-    if (!isAdmin && !isOwner) {
-      console.log('[REPORT CONTROLLER] User not authorized to delete this report');
-      return res.status(403).json({
-        success: false,
-        message: 'You can only delete your own reports'
-      });
+    // Admins can delete any report except approved/published
+    if (isAdmin) {
+      if (report.status === 'approved' || report.status === 'published') {
+        console.log('[REPORT CONTROLLER] Cannot delete approved/published report');
+        return res.status(403).json({
+          success: false,
+          message: 'Cannot delete approved or published reports'
+        });
+      }
+    } else {
+      // Nurses: must own the report AND status must be in allowed states
+      if (!isOwner) {
+        console.log('[REPORT CONTROLLER] User not authorized to delete this report');
+        return res.status(403).json({
+          success: false,
+          message: 'You can only delete your own reports'
+        });
+      }
+
+      // Nurses can only delete reports in these states
+      const nurseAllowedStatuses = ['uploaded', 'processing', 'error', 'ready'];
+      if (!nurseAllowedStatuses.includes(report.status)) {
+        console.log('[REPORT CONTROLLER] Nurse cannot delete report with status:', report.status);
+        return res.status(403).json({
+          success: false,
+          message: `Cannot delete report with status '${report.status}'. You can only delete reports that are uploaded, processing, have errors, or are pending review.`
+        });
+      }
     }
 
     // Delete PDF file if it exists

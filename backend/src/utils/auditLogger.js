@@ -461,6 +461,29 @@ function logApiCall(requestId, apiName, metrics) {
 }
 
 /**
+ * Log info message
+ */
+function logInfo(requestId, infoType, details = {}) {
+  const session = activeRequests.get(requestId);
+  const now = Date.now();
+
+  // Console log
+  console.log(`[${requestId || 'NO_SESSION'}] ℹ️ INFO [${infoType}]: ${details.message || JSON.stringify(details)}`);
+
+  if (session) {
+    // Write to file
+    writeToFile(session.reportId, {
+      ts: new Date(now).toISOString(),
+      level: 'INFO',
+      step: infoType,
+      reportId: session.reportId,
+      requestId,
+      data: details
+    });
+  }
+}
+
+/**
  * Log a warning
  */
 function logWarning(requestId, message, details = {}) {
@@ -762,6 +785,7 @@ module.exports = {
   storePdfTimings,
   logPageMetric,
   logApiCall,
+  logInfo,
   logWarning,
   logError,
 

@@ -25,13 +25,18 @@ const getConfig = async (req, res) => {
           flaggedParameterThreshold: config.flagThreshold || 50,
           autoApproveThreshold: 90
         },
-        systemConfig: config.systemConfig || {
-          enableAutoProcessing: true,
-          processingTimeout: 60,
-          maxFileSize: 10,
-          allowedFileTypes: ['pdf'],
-          retentionDays: 365,
-          auditLogEnabled: true
+        systemConfig: {
+          enableAutoProcessing: config.systemConfig?.enableAutoProcessing ?? true,
+          processingTimeout: config.systemConfig?.processingTimeout ?? 60,
+          maxFileSize: config.systemConfig?.maxFileSize ?? 10,
+          allowedFileTypes: config.systemConfig?.allowedFileTypes || ['pdf'],
+          retentionDays: config.systemConfig?.retentionDays ?? 365,
+          auditLogEnabled: config.systemConfig?.auditLogEnabled ?? true,
+          defaultExtractionMethod: config.systemConfig?.defaultExtractionMethod || 'image',
+          defaultModel: config.systemConfig?.defaultModel || 'gemini-2.5-flash',
+          disableBulkUpload: config.systemConfig?.disableBulkUpload ?? false,
+          geminiConcurrency: config.systemConfig?.geminiConcurrency ?? 8,
+          pdfConcurrency: config.systemConfig?.pdfConcurrency ?? 2
         },
         labs: labsWithIds,
         // Legacy fields for backward compatibility
@@ -439,6 +444,12 @@ const updateSystemConfig = async (req, res) => {
     }
     if (systemConfig.disableBulkUpload !== undefined) {
       config.systemConfig.disableBulkUpload = systemConfig.disableBulkUpload;
+    }
+    if (systemConfig.geminiConcurrency !== undefined) {
+      config.systemConfig.geminiConcurrency = systemConfig.geminiConcurrency;
+    }
+    if (systemConfig.pdfConcurrency !== undefined) {
+      config.systemConfig.pdfConcurrency = systemConfig.pdfConcurrency;
     }
 
     config.updatedBy = req.user.userId;

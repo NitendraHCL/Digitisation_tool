@@ -3,6 +3,15 @@ const LabConfig = require('../models/LabConfig');
 const pLimit = require('p-limit');
 const audit = require('../utils/auditLogger');
 const { withRetry, sleep } = require('../utils/retryHelper');
+const geminiKeyManager = require('../utils/geminiKeyManager');
+const { addToQueue, PRIORITY } = require('../utils/geminiQueue');
+
+// ============ ADMIN-CONFIGURABLE DELAYS ============
+// These can be adjusted via environment variables without code changes
+const PAGE_CALL_DELAY_MS = Number(process.env.PAGE_CALL_DELAY_MS) || 300;
+const RETRY_INITIAL_DELAY_MS = Number(process.env.RETRY_INITIAL_DELAY_MS) || 1500;
+const RETRY_BETWEEN_DELAY_MS = Number(process.env.RETRY_BETWEEN_DELAY_MS) || 2000;
+const MAX_RETRIES_PER_PAGE = Number(process.env.MAX_RETRIES_PER_PAGE) || 1;
 
 // Helper function to normalize gender values to schema-compatible values
 // Converts "M", "m", "Male", "MALE" → "male"
@@ -25,7 +34,412 @@ function normalizeGender(gender) {
 
 class GeminiExtractorService {
   constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    // Note: We now use geminiKeyManager for key rotation
+    // Each API call will get a fresh key from the manager
+    // This constructor initializes with the first key for backwards compatibility
+    this.genAI = new GoogleGenerativeAI(geminiKeyManager.getNextKey());
+  }
+
+  /**
+   * Get a GoogleGenerativeAI instance with the next API key in rotation
+   * @returns {GoogleGenerativeAI} Fresh instance with rotated key
+   */
+  getGenAIWithRotatedKey() {
+    return new GoogleGenerativeAI(geminiKeyManager.getNextKey());
+  }
+
+  /**
+   * Get a GoogleGenerativeAI instance with key info for logging
+   * @returns {Object} { genAI, keyInfo: { keyIndex, keyName, totalKeys } }
+   */
+  getGenAIWithKeyInfo() {
+    const keyData = geminiKeyManager.getNextKeyWithInfo();
+    return {
+      genAI: new GoogleGenerativeAI(keyData.key),
+      keyInfo: {
+        keyIndex: keyData.keyIndex,
+        keyName: keyData.keyName,
+        totalKeys: keyData.totalKeys
+      }
+    };
+  }
+
+  /**
+   * Execute Gemini API call with automatic retry on rate limit
+   * Uses key rotation with cooldown - rate-limited keys are skipped for 60s
+   *
+   * @param {string} prompt - The prompt to send to Gemini
+   * @param {Object} imagePart - The image data { inlineData: { data, mimeType } }
+   * @param {string} modelName - The Gemini model to use
+   * @param {number} maxRetries - Maximum retry attempts (default 4)
+   * @param {string} requestId - Request ID for audit logging
+   * @returns {Object} { result, keyInfo }
+   */
+  async callGeminiWithRetry(prompt, imagePart, modelName, maxRetries = 4, requestId = null) {
+    const safetySettings = [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+    ];
+
+    let lastError = null;
+    let lastKeyInfo = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Get next AVAILABLE key (skips keys on cooldown)
+      const keyData = geminiKeyManager.getNextAvailableKeyWithInfo();
+      lastKeyInfo = keyData;
+
+      try {
+        const genAI = new GoogleGenerativeAI(keyData.key);
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: { temperature: 0, topP: 1, topK: 1, maxOutputTokens: 8192 },
+          safetySettings
+        });
+
+        const result = await model.generateContent([prompt, imagePart]);
+        return { result, keyInfo: keyData };
+
+      } catch (error) {
+        lastError = error;
+        const isRateLimit = error.message.includes('429') ||
+                           error.message.includes('quota') ||
+                           error.message.includes('RESOURCE_EXHAUSTED') ||
+                           error.message.includes('Too Many Requests');
+
+        if (isRateLimit) {
+          // Mark this key as rate-limited (cooldown for 60s)
+          geminiKeyManager.markRateLimited(keyData.key);
+
+          if (attempt < maxRetries) {
+            console.warn(`[GEMINI RETRY] Rate limit on ${keyData.keyName}, attempt ${attempt}/${maxRetries}, trying next key...`);
+            await sleep(500); // Brief pause before retry
+            continue;
+          }
+        }
+
+        // Non-rate-limit error or max retries exceeded
+        console.error(`[GEMINI RETRY] Error on attempt ${attempt}/${maxRetries} with ${keyData.keyName}: ${error.message}`);
+        if (attempt >= maxRetries) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError || new Error('All retry attempts failed');
+  }
+
+  /**
+   * Parse header-only response from Gemini
+   * Used by two-pass Page 1 extraction
+   * @param {string} response - Raw response from Gemini
+   * @returns {Object} Parsed header info
+   */
+  parseHeaderResponse(response) {
+    const headers = {
+      labName: 'Unknown Lab',
+      patientName: null,
+      patientAge: null,
+      patientGender: null,
+      dateOfTest: null
+    };
+
+    const lines = response.split('\n');
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      if (trimmedLine.toUpperCase().startsWith('LAB_NAME:')) {
+        const value = trimmedLine.substring(trimmedLine.indexOf(':') + 1).trim();
+        headers.labName = value || 'Unknown Lab';
+      } else if (trimmedLine.toUpperCase().startsWith('PATIENT_NAME:')) {
+        const value = trimmedLine.substring(trimmedLine.indexOf(':') + 1).trim();
+        headers.patientName = (value && value !== 'Not Found') ? value : null;
+      } else if (trimmedLine.toUpperCase().startsWith('PATIENT_AGE:')) {
+        const value = trimmedLine.substring(trimmedLine.indexOf(':') + 1).trim();
+        headers.patientAge = (value && value !== 'Not Found') ? value : null;
+      } else if (trimmedLine.toUpperCase().startsWith('PATIENT_GENDER:')) {
+        const value = trimmedLine.substring(trimmedLine.indexOf(':') + 1).trim();
+        headers.patientGender = normalizeGender(value);
+      } else if (trimmedLine.toUpperCase().startsWith('DATE_OF_TEST:')) {
+        const value = trimmedLine.substring(trimmedLine.indexOf(':') + 1).trim();
+        headers.dateOfTest = (value && value !== 'Not Found') ? value : null;
+      }
+    }
+
+    return headers;
+  }
+
+  /**
+   * Parse parameter response from Gemini
+   * Used by two-pass Page 1 extraction and quality-based retry
+   * @param {string} response - Raw response from Gemini
+   * @returns {Array} Array of parsed parameters
+   */
+  parseParameterResponse(response) {
+    const parameters = [];
+
+    // Check for NO_TEST_DATA response
+    if (response.trim().toUpperCase() === 'NO_TEST_DATA') {
+      return parameters;
+    }
+
+    const lines = response.trim().split('\n').filter(line => line.includes('|'));
+
+    for (const line of lines) {
+      const parts = line.split('|').map(part => part.trim());
+
+      if (parts.length >= 7) {
+        const refHigh = parts[5] === 'null' || parts[5] === '' ? null : parseFloat(parts[5]);
+        const refLow = parts[6] === 'null' || parts[6] === '' ? null : parseFloat(parts[6]);
+
+        parameters.push({
+          type: 'path',
+          serviceItemName: parts[0],
+          value: (parts[1] === 'null' || parts[1] === '') ? null : parts[1],
+          unit: (parts[2] === 'null' || parts[2] === '') ? null : parts[2],
+          method: (parts[3] === 'null' || parts[3] === '' || parts[3] === 'N/A') ? null : parts[3],
+          referenceRange: {
+            high: Number.isNaN(refHigh) ? null : refHigh,
+            low: Number.isNaN(refLow) ? null : refLow,
+            referenceRange: parts[4]
+          }
+        });
+      }
+    }
+
+    return parameters;
+  }
+
+  /**
+   * Two-Pass Extraction for Page 1
+   *
+   * WHY THIS EXISTS:
+   * Page 1 previously had ONE prompt doing THREE tasks:
+   *   1. Match lab name from 40+ options
+   *   2. Extract patient header info
+   *   3. Extract all test parameters
+   *
+   * PROBLEM: Gemini gets "attention exhaustion" - it completes the header
+   * extraction but skips the parameters. This caused ~40% of Page 1
+   * extractions to have 0 CBC parameters.
+   *
+   * SOLUTION: Split into TWO focused API calls:
+   *   Pass 1: Headers only (5 fields) - through queue
+   *   Pass 2: Parameters only (using improved prompt) - through queue
+   *
+   * @param {string} pageImage - Base64 encoded image of Page 1
+   * @param {string} labNames - Comma-separated list of valid lab names
+   * @param {string} modelName - Gemini model to use
+   * @param {string} requestId - Request ID for audit logging
+   * @returns {Object} { headerInfo, results, rawResponse, extractionMetadata }
+   */
+  async extractPage1TwoPass(pageImage, labNames, modelName, requestId) {
+    console.log('[PAGE 1 TWO-PASS] ========== Starting two-pass extraction ==========');
+
+    const totalStartTime = Date.now();
+    let headerDuration = 0;
+    let paramDuration = 0;
+    let headerTokens = { promptTokenCount: 0, candidatesTokenCount: 0 };
+    let paramTokens = { promptTokenCount: 0, candidatesTokenCount: 0 };
+
+    // ==================== PASS 1: HEADERS ONLY ====================
+    console.log('[PAGE 1 TWO-PASS] Pass 1: Extracting headers...');
+
+    const headerPrompt = `You are a medical lab report header extractor.
+
+Extract ONLY the following header information from this lab report page:
+
+LAB_NAME: [exact lab name from the report, or "Unknown Lab" if not in list: ${labNames}]
+PATIENT_NAME: [patient's full name]
+PATIENT_AGE: [age as shown, e.g., "35 Y" or "35 Years"]
+PATIENT_GENDER: [male/female/other]
+DATE_OF_TEST: [YYYY-MM-DD format]
+
+RULES:
+- Return ONLY these 5 fields
+- Do NOT extract any test parameters
+- If a field is not found, return "Not Found"
+
+FORMAT:
+LAB_NAME: <value>
+PATIENT_NAME: <value>
+PATIENT_AGE: <value>
+PATIENT_GENDER: <value>
+DATE_OF_TEST: <value>`;
+
+    const imagePart = {
+      inlineData: {
+        data: pageImage,
+        mimeType: 'image/png'
+      }
+    };
+
+    const safetySettings = [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+    ];
+
+    let headerResponse = '';
+    let headerInfo = { labName: 'Unknown Lab', patientName: null, patientAge: null, patientGender: null, dateOfTest: null };
+
+    let headerKeyInfo = null;
+    try {
+      const headerStartTime = Date.now();
+
+      // Execute header extraction with rate-limit aware retry
+      // This will automatically retry with next available key if rate-limited
+      console.log('[QUEUE] Page=1 (header), Priority=HIGH');
+      const { result: headerResult, keyInfo } = await addToQueue(async () => {
+        return await this.callGeminiWithRetry(headerPrompt, imagePart, modelName, 4, requestId);
+      }, { priority: PRIORITY.HIGH });
+      headerKeyInfo = keyInfo;
+
+      headerResponse = headerResult.response.text();
+      headerDuration = ((Date.now() - headerStartTime) / 1000).toFixed(2);
+      headerTokens = headerResult.response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
+
+      console.log(`[PAGE 1 TWO-PASS] Pass 1 complete: ${headerDuration}s, Key: ${headerKeyInfo?.keyName || 'N/A'}, ${headerTokens.candidatesTokenCount} output tokens`);
+
+      // Parse header response
+      headerInfo = this.parseHeaderResponse(headerResponse);
+      console.log(`[PAGE 1 TWO-PASS] Headers extracted:`, JSON.stringify(headerInfo));
+
+      if (requestId) {
+        audit.logApiCall(requestId, 'PAGE1_HEADER_EXTRACTION', {
+          duration: parseFloat(headerDuration),
+          tokens: headerTokens.promptTokenCount + headerTokens.candidatesTokenCount,
+          apiKey: headerKeyInfo ? `Key ${headerKeyInfo.keyIndex}/${headerKeyInfo.totalKeys} (${headerKeyInfo.keyName})` : 'N/A'
+        });
+      }
+    } catch (headerError) {
+      console.error(`[PAGE 1 TWO-PASS] Pass 1 FAILED: ${headerError.message}`);
+      if (requestId) {
+        audit.logError(requestId, 'PAGE1_HEADER_FAILED', { error: headerError.message, apiKey: headerKeyInfo?.keyName });
+      }
+    }
+
+    // Small delay between calls to avoid rate limiting
+    await sleep(PAGE_CALL_DELAY_MS);
+
+    // ==================== PASS 2: PARAMETERS ONLY ====================
+    console.log('[PAGE 1 TWO-PASS] Pass 2: Extracting parameters...');
+
+    const paramPrompt = `You are a medical lab report parameter extractor.
+
+Extract ALL test parameters from this page in this EXACT format:
+TEST_NAME | VALUE | UNIT | METHOD | REF_RANGE_TEXT | REF_HIGH | REF_LOW
+
+CRITICAL RULES:
+
+1. MULTI-LINE REFERENCE RANGES:
+   Some parameters have reference ranges spanning MULTIPLE LINES.
+   - Concatenate all lines into ONE REF_RANGE_TEXT, separated by ", "
+   - If MULTIPLE ranges exist (age-specific, gender-specific), set REF_HIGH and REF_LOW to "null"
+   - Only populate REF_HIGH/REF_LOW if a SINGLE unambiguous numeric range applies
+
+   Example (multiple ranges - use null):
+   Total Protein | 7.02 | gm/dL | N/A | 0-7 Day: 4.6-7.0, 7Day to 1year: 4.4-7.5, 3year-Adults: 6.0-8.3 | null | null
+
+   Example (single range - extract values):
+   Glucose | 95 | mg/dL | N/A | 70-110 | 110 | 70
+
+2. PHYSICAL EXAMINATION DATA:
+   Physical exam findings ARE valid. Include Blood Pressure, Pulse, etc.
+   Use "null" for REF_HIGH/REF_LOW when no numeric reference exists.
+
+   Example:
+   Blood Pressure | 110/70 | mmHg | N/A | null | null | null
+
+3. REF_HIGH/REF_LOW AMBIGUITY:
+   If the reference range is ambiguous or you're unsure which value is high vs low, use "null" for BOTH.
+   It's better to leave them blank than to extract incorrect values.
+
+4. NEVER SKIP a row with a test name and value.
+
+5. NON-TEST PAGES:
+   If this page contains ONLY terms & conditions, disclaimers, or interpretation summaries
+   (no actual lab test results with values), return: NO_TEST_DATA
+
+6. DO NOT OVER-EXTRACT FROM DESCRIPTIVE TEXT:
+   For RADIOLOGY/IMAGING reports (Ultrasound, CT, MRI, X-Ray, ECG findings):
+   - Each organ/finding should be ONE entry, not multiple
+   - Keep the FULL descriptive text as the VALUE
+   - Do NOT split descriptive findings into separate rows
+
+   WRONG (over-extraction):
+   LIVER SIZE | 12.2 | cms | N/A | null | null | null
+   LIVER ECHOTEXTURE | Normal | N/A | N/A | null | null | null
+
+   CORRECT (single entry):
+   LIVER | Normal in size (12.2 cms) and echotexture with smooth contours. No focal lesions. | N/A | N/A | null | null | null
+
+   For LABORATORY reports (CBC, LFT, KFT, etc.) each discrete test value IS a separate entry.
+
+OUTPUT: Only pipe-separated data, one test per line. No markdown, no headers, no explanations.`;
+
+    let paramResponse = '';
+    let parameters = [];
+    let paramKeyInfo = null;
+
+    try {
+      const paramStartTime = Date.now();
+
+      // Execute parameter extraction with rate-limit aware retry
+      // This will automatically retry with next available key if rate-limited
+      console.log('[QUEUE] Page=1 (params), Priority=HIGH');
+      const { result: paramResult, keyInfo } = await addToQueue(async () => {
+        return await this.callGeminiWithRetry(paramPrompt, imagePart, modelName, 4, requestId);
+      }, { priority: PRIORITY.HIGH });
+      paramKeyInfo = keyInfo;
+
+      paramResponse = paramResult.response.text();
+      paramDuration = ((Date.now() - paramStartTime) / 1000).toFixed(2);
+      paramTokens = paramResult.response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
+
+      console.log(`[PAGE 1 TWO-PASS] Pass 2 complete: ${paramDuration}s, Key: ${paramKeyInfo?.keyName || 'N/A'}, ${paramTokens.candidatesTokenCount} output tokens`);
+
+      // Parse parameter response
+      parameters = this.parseParameterResponse(paramResponse);
+      console.log(`[PAGE 1 TWO-PASS] Parameters extracted: ${parameters.length}`);
+
+      if (requestId) {
+        audit.logApiCall(requestId, 'PAGE1_PARAM_EXTRACTION', {
+          duration: parseFloat(paramDuration),
+          tokens: paramTokens.promptTokenCount + paramTokens.candidatesTokenCount,
+          parametersExtracted: parameters.length,
+          apiKey: paramKeyInfo ? `Key ${paramKeyInfo.keyIndex}/${paramKeyInfo.totalKeys} (${paramKeyInfo.keyName})` : 'N/A'
+        });
+      }
+    } catch (paramError) {
+      console.error(`[PAGE 1 TWO-PASS] Pass 2 FAILED: ${paramError.message}`);
+      if (requestId) {
+        audit.logError(requestId, 'PAGE1_PARAM_FAILED', { error: paramError.message, apiKey: paramKeyInfo?.keyName });
+      }
+    }
+
+    const totalDuration = ((Date.now() - totalStartTime) / 1000).toFixed(2);
+    console.log(`[PAGE 1 TWO-PASS] ========== Complete: ${parameters.length} params in ${totalDuration}s ==========`);
+
+    // ==================== RETURN COMBINED RESULT ====================
+    return {
+      headerInfo,
+      results: parameters,
+      rawResponse: `=== HEADERS ===\n${headerResponse}\n\n=== PARAMETERS ===\n${paramResponse}`,
+      extractionMetadata: {
+        method: 'two_pass',
+        page: 1,
+        headerDuration: parseFloat(headerDuration),
+        paramDuration: parseFloat(paramDuration),
+        totalDuration: parseFloat(totalDuration),
+        inputTokens: (headerTokens.promptTokenCount || 0) + (paramTokens.promptTokenCount || 0),
+        outputTokens: (headerTokens.candidatesTokenCount || 0) + (paramTokens.candidatesTokenCount || 0)
+      }
+    };
   }
 
   async extractFromText(text, orderId, modelName = 'gemini-2.5-flash') {
@@ -81,13 +495,18 @@ Where:
 - VALUE: the test result value
 - UNIT: unit of measurement (e.g., g/dL, mg/dL, %)
 - METHOD: testing method used (if not present, use "N/A")
-- REF_RANGE_TEXT: the complete reference range text as shown
-- REF_HIGH: the upper limit number from reference range (null if not present)
-- REF_LOW: the lower limit number from reference range (null if not present)
+- REF_RANGE_TEXT: the complete reference range text as shown (always preserve ALL ranges)
+- REF_HIGH: the upper limit number (null if multiple ranges exist OR not present)
+- REF_LOW: the lower limit number (null if multiple ranges exist OR not present)
+
+REFERENCE RANGE RULES:
+- Only populate REF_HIGH/REF_LOW if a SINGLE unambiguous numeric range exists
+- If MULTIPLE ranges exist (age/gender-specific), set REF_HIGH and REF_LOW to "null"
 
 Example format:
-HEMOGLOBIN | 13.5 | g/dL | Automated Cell Counter | M: 13.0-17.0, F: 12.0-15.0 | 17.0 | 13.0
-HBA1C | 5.6 | % | HPLC | Non-diabetic: <5.7, Pre-diabetic: 5.7-6.4, Diabetic: >=6.5 | 5.7 | null
+HEMOGLOBIN | 13.5 | g/dL | Automated Cell Counter | M: 13.0-17.0, F: 12.0-15.0 | null | null
+HBA1C | 5.6 | % | HPLC | Non-diabetic: <5.7, Pre-diabetic: 5.7-6.4, Diabetic: >=6.5 | null | null
+GLUCOSE FASTING | 95 | mg/dL | Enzymatic | 70-110 | 110 | 70
 
 Important:
 - Extract ALL test parameters from the report
@@ -376,20 +795,26 @@ Where:
 - METHOD: testing method used (if not present, use "N/A")
 - REF_RANGE_TEXT: the complete reference range text as shown
   ⚠️ CRITICAL: Reference ranges can be LONG (up to 200 characters). Extract the COMPLETE text including ALL parts separated by commas. Do NOT truncate.
-- REF_HIGH: the upper limit number from reference range (null if not present)
-- REF_LOW: the lower limit number from reference range (null if not present)
+- REF_HIGH: the upper limit number (null if multiple ranges exist OR not present)
+- REF_LOW: the lower limit number (null if multiple ranges exist OR not present)
+
+REFERENCE RANGE RULES:
+- ALWAYS preserve the COMPLETE REF_RANGE_TEXT
+- Only populate REF_HIGH/REF_LOW if a SINGLE unambiguous numeric range applies
+- If MULTIPLE ranges exist (age/gender/condition-specific), set REF_HIGH and REF_LOW to "null"
 
 REFERENCE RANGE FORMATS (extract complete text for REF_RANGE_TEXT):
-- Simple numeric: "5-9" or "5.0-9.0"
-- Age-specific: "Adult: 13-17, Child: 11-16, Infant: 14-20"
-- Gender-specific: "Male: 13-17, Female: 12-16"
-- Categorical: "Negative: <1.0, Positive: ≥1.0"
-- Multi-condition: "18-50 years: 0.4-4.0, >50 years: 0.5-5.0"
-- Combined: "Adult Male: 13.5-17.5, Adult Female: 12.0-15.5"
+- Simple numeric: "5-9" or "5.0-9.0" → CAN extract REF_HIGH/REF_LOW
+- Age-specific: "Adult: 13-17, Child: 11-16, Infant: 14-20" → use null for REF_HIGH/REF_LOW
+- Gender-specific: "Male: 13-17, Female: 12-16" → use null for REF_HIGH/REF_LOW
+- Categorical: "Negative: <1.0, Positive: ≥1.0" → use null for REF_HIGH/REF_LOW
+- Multi-condition: "18-50 years: 0.4-4.0, >50 years: 0.5-5.0" → use null for REF_HIGH/REF_LOW
+- Combined: "Adult Male: 13.5-17.5, Adult Female: 12.0-15.5" → use null for REF_HIGH/REF_LOW
 
 Example format:
-HEMOGLOBIN | 13.5 | g/dL | Automated Cell Counter | M: 13.0-17.0, F: 12.0-15.0 | 17.0 | 13.0
-HBA1C | 5.6 | % | HPLC | Non-diabetic: <5.7, Pre-diabetic: 5.7-6.4, Diabetic: >=6.5 | 5.7 | null
+HEMOGLOBIN | 13.5 | g/dL | Automated Cell Counter | M: 13.0-17.0, F: 12.0-15.0 | null | null
+HBA1C | 5.6 | % | HPLC | Non-diabetic: <5.7, Pre-diabetic: 5.7-6.4, Diabetic: >=6.5 | null | null
+GLUCOSE FASTING | 95 | mg/dL | Enzymatic | 70-110 | 110 | 70
 
 Important:
 - Extract ALL test parameters from ALL pages/images
@@ -720,15 +1145,73 @@ The pages in this lab report are provided in their original sequential order. Yo
       let totalOutputTokens = 0;
       let totalCost = 0;
 
-      console.log('[GEMINI PAGEWISE] 6. ========== PROCESSING PAGES CONCURRENTLY ==========');
-      console.log('[GEMINI PAGEWISE] 6a. Concurrency limit: 15 pages at once');
+      console.log('[GEMINI PAGEWISE] 6. ========== PROCESSING PAGES WITH DUAL QUEUE SYSTEM ==========');
+      console.log('[GEMINI PAGEWISE] 6a. PAGE1_QUEUE (concurrency 2): Page 1 header + param extraction');
+      console.log('[GEMINI PAGEWISE] 6b. BULK_QUEUE (concurrency 6): Pages 2+ extraction');
+      console.log('[GEMINI PAGEWISE] 6c. Page 1 uses two-pass extraction, Pages 2+ use parameter-only prompt');
 
-      // Set up concurrency control - process max 15 pages at once
-      const limit = pLimit(15);
+      // Updated parameter prompt for Pages 2+ with multi-line ref and physical exam rules
+      const parameterPromptTemplate = `You are a medical lab report parameter extractor.
 
-      // Create array of promises for concurrent processing
+Extract ALL test parameters from this page in this EXACT format:
+TEST_NAME | VALUE | UNIT | METHOD | REF_RANGE_TEXT | REF_HIGH | REF_LOW
+
+CRITICAL RULES:
+
+1. MULTI-LINE REFERENCE RANGES:
+   Some parameters have reference ranges spanning MULTIPLE LINES.
+   - Concatenate all lines into ONE REF_RANGE_TEXT, separated by ", "
+   - If MULTIPLE ranges exist (age-specific, gender-specific), set REF_HIGH and REF_LOW to "null"
+   - Only populate REF_HIGH/REF_LOW if a SINGLE unambiguous numeric range applies
+
+   Example (multiple ranges - use null):
+   Total Protein | 7.02 | gm/dL | N/A | 0-7 Day: 4.6-7.0, 7Day to 1year: 4.4-7.5, 3year-Adults: 6.0-8.3 | null | null
+
+   Example (single range - extract values):
+   Glucose | 95 | mg/dL | N/A | 70-110 | 110 | 70
+
+2. PHYSICAL EXAMINATION DATA:
+   Physical exam findings ARE valid. Include Blood Pressure, Pulse, etc.
+   Use "null" for REF_HIGH/REF_LOW when no numeric reference exists.
+
+   Example:
+   Blood Pressure | 110/70 | mmHg | N/A | null | null | null
+
+3. REF_HIGH/REF_LOW AMBIGUITY:
+   If the reference range is ambiguous or you're unsure which value is high vs low, use "null" for BOTH.
+   It's better to leave them blank than to extract incorrect values.
+
+4. NEVER SKIP a row with a test name and value.
+
+5. NON-TEST PAGES:
+   If this page contains ONLY terms & conditions, disclaimers, or interpretation summaries
+   (no actual lab test results with values), return: NO_TEST_DATA
+
+6. DO NOT OVER-EXTRACT FROM DESCRIPTIVE TEXT:
+   For RADIOLOGY/IMAGING reports (Ultrasound, CT, MRI, X-Ray, ECG findings):
+   - Each organ/finding should be ONE entry, not multiple
+   - Keep the FULL descriptive text as the VALUE
+   - Do NOT split descriptive findings into separate rows
+
+   WRONG (over-extraction):
+   LIVER SIZE | 12.2 | cms | N/A | null | null | null
+   LIVER ECHOTEXTURE | Normal | N/A | N/A | null | null | null
+   LIVER FOCAL LESIONS | No | N/A | N/A | null | null | null
+
+   CORRECT (single entry):
+   LIVER | Normal in size (12.2 cms) and echotexture with smooth contours. No focal lesions. | N/A | N/A | null | null | null
+
+   For LABORATORY reports (CBC, LFT, KFT, etc.) each discrete test value IS a separate entry.
+
+**IMPORTANT - Interpretations:**
+Do not extract data from interpretation sections as test parameters.
+Only extract actual measured test results with values, units, and reference ranges.
+
+OUTPUT: Only pipe-separated data, one test per line. No markdown, no headers, no explanations.`;
+
+      // Create array of promises for processing (controlled by global queue)
       const pagePromises = images.map((imageData, pageIdx) =>
-        limit(async () => {
+        (async () => {
           const pageNumber = pageIdx + 1;
           const pageStartTime = Date.now();
 
@@ -736,27 +1219,48 @@ The pages in this lab report are provided in their original sequential order. Yo
 
           // Skip if image is undefined/null (failed conversion)
           if (!imageData || imageData.length === 0) {
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. ⚠️ SKIPPING: Image data is missing (likely conversion failed)`);
-            return null; // Return null for skipped pages
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. ⚠️ SKIPPING: Image data is missing`);
+            return null;
           }
 
           console.log(`[GEMINI PAGEWISE] 7.${pageNumber}a. Image size: ${(imageData.length / 1024).toFixed(2)}KB`);
 
           try {
-            // Prepare image part
+            // ========== PAGE 1: USE TWO-PASS EXTRACTION ==========
+            if (pageNumber === 1) {
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. Using TWO-PASS extraction for Page 1`);
+
+              const page1Result = await this.extractPage1TwoPass(imageData, labNames, modelName, requestId);
+
+              const pageDuration = ((Date.now() - pageStartTime) / 1000).toFixed(2);
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Page 1 complete: ${page1Result.results.length} params in ${pageDuration}s`);
+
+              return {
+                pageNumber: 1,
+                rawResponse: page1Result.rawResponse,
+                results: page1Result.results,
+                labName: page1Result.headerInfo.labName,
+                patientName: page1Result.headerInfo.patientName,
+                patientAge: page1Result.headerInfo.patientAge,
+                patientGender: page1Result.headerInfo.patientGender,
+                dateOfTest: page1Result.headerInfo.dateOfTest,
+                extractionMetadata: {
+                  ...page1Result.extractionMetadata,
+                  parametersExtracted: page1Result.results.length,
+                  processingTime: parseFloat(pageDuration),
+                  cost: ((page1Result.extractionMetadata.inputTokens * 0.30) +
+                         (page1Result.extractionMetadata.outputTokens * 2.50)) / 1000000
+                },
+                extractedAt: new Date()
+              };
+            }
+
+            // ========== PAGES 2+: USE PARAMETER-ONLY PROMPT THROUGH QUEUE ==========
             const imagePart = {
               inlineData: {
                 data: imageData,
                 mimeType: 'image/png'
               }
-            };
-
-            // Generation config
-            const generationConfig = {
-              temperature: 0,
-              topP: 1,
-              topK: 1,
-              maxOutputTokens: 8192  // Each page should need much less than full report
             };
 
             const safetySettings = [
@@ -766,157 +1270,49 @@ The pages in this lab report are provided in their original sequential order. Yo
               { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
             ];
 
-            const model = this.genAI.getGenerativeModel({
-              model: modelName,
-              generationConfig,
-              safetySettings
-            });
+            // Execute through priority queue with rate-limit aware retry
+            // Pages 2+ use NORMAL priority, Page 1 uses HIGH priority
+            console.log(`[QUEUE] Page=${pageNumber}, Priority=NORMAL`);
+            let pageKeyInfo = null;
+            const { result, keyInfo: pageKeyInfoResult } = await addToQueue(async () => {
+              return await this.callGeminiWithRetry(parameterPromptTemplate, imagePart, modelName, 4, requestId);
+            }, { priority: PRIORITY.NORMAL });
+            pageKeyInfo = pageKeyInfoResult;
 
-            // Call Gemini for this page (with retry logic)
-            const contents = [promptTemplate, imagePart];
-            const result = await withRetry(
-              () => model.generateContent(contents),
-              {
-                maxRetries: 2,
-                baseDelayMs: 1000,
-                operationName: `Gemini page ${pageNumber} API call`
-              }
-            );
             const response = result.response.text();
+            const pageDuration = ((Date.now() - pageStartTime) / 1000).toFixed(2);
 
-            const pageEndTime = Date.now();
-            const pageDuration = ((pageEndTime - pageStartTime) / 1000).toFixed(2);
-
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s`);
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}b. API call duration: ${pageDuration}s, Key: ${pageKeyInfo?.keyName || 'N/A'}`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}c. Response length: ${response.length} characters`);
 
             // Log to audit
             if (requestId) {
               audit.logApiCall(requestId, `GEMINI_PAGE_${pageNumber}`, {
                 duration: parseFloat(pageDuration),
-                responseLength: response.length
+                responseLength: response.length,
+                apiKey: pageKeyInfo ? `Key ${pageKeyInfo.keyIndex}/${pageKeyInfo.totalKeys} (${pageKeyInfo.keyName})` : 'N/A'
               });
             }
 
-            // DEBUG: Log full response for page
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. ========== FULL RESPONSE FOR PAGE ${pageNumber} ==========`);
-            console.log(response);
+            // DEBUG: Log response for debugging
+            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. ========== RESPONSE FOR PAGE ${pageNumber} ==========`);
+            console.log(response.substring(0, 500) + (response.length > 500 ? '...' : ''));
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}e. ========== END RESPONSE ==========`);
 
-            // Parse response
-            const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
-            let labNameFromPage = null;
-            let patientNameFromPage = null;
-            let patientAgeFromPage = null;
-            let patientGenderFromPage = null;
-            let dateOfTestFromPage = null;
+            // Parse parameter response using helper method
+            const pageResults = this.parseParameterResponse(response);
 
-            // Check for lab name (extract from ANY page for smart fallback)
-            if (allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('LAB_NAME:')) {
-              labNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d. Lab name from page ${pageNumber}: ${labNameFromPage}`);
-              allLines.shift();
-            }
+            // Check if page explicitly returned NO_TEST_DATA (should not be retried)
+            const wasNoTestData = response.trim().toUpperCase() === 'NO_TEST_DATA';
 
-            // Check for patient name (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_NAME:')) {
-              patientNameFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d1. Patient name: ${patientNameFromPage}`);
-              allLines.shift();
-            }
-
-            // Check for patient age (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_AGE:')) {
-              patientAgeFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d1a. Patient age: ${patientAgeFromPage}`);
-              allLines.shift();
-            }
-
-            // Check for patient gender (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('PATIENT_GENDER:')) {
-              const rawGender = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              patientGenderFromPage = normalizeGender(rawGender);
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d2. Patient gender: ${rawGender} → normalized: ${patientGenderFromPage}`);
-              allLines.shift();
-            }
-
-            // Check for date of test (only expected on first page)
-            if (pageNumber === 1 && allLines.length > 0 && allLines[0].trim().toUpperCase().startsWith('DATE_OF_TEST:')) {
-              dateOfTestFromPage = allLines[0].substring(allLines[0].indexOf(':') + 1).trim();
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}d3. Date of test: ${dateOfTestFromPage}`);
-              allLines.shift();
-            }
-
-            const lines = allLines.filter(l => l.includes('|'));
-
-            // DEBUG: Log line filtering results
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Total lines after headers: ${allLines.length}`);
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Lines with pipes: ${lines.length}`);
-            if (lines.length === 0 && allLines.length > 0) {
-              console.warn(`[GEMINI PAGEWISE] WARNING Page ${pageNumber}: No pipe-separated lines found!`);
-              console.warn(`[GEMINI PAGEWISE] First 5 remaining lines:`, allLines.slice(0, 5));
-            }
-
-            const pageResults = [];
-
-            // Debug: Log first few raw lines
-            if (lines.length > 0 && pageNumber === 1) {
-              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g1. First 3 raw lines for debugging:`);
-              lines.slice(0, 3).forEach((line, idx) => {
-                console.log(`  Line ${idx + 1}: "${line}"`);
-              });
-            }
-
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i].trim();
-              const parts = line.split('|').map(p => p.trim());
-
-              if (parts.length >= 7) {
-                const testName = parts[0];
-                // Handle "null" string and empty values properly
-                const value = parts[1] === 'null' || parts[1] === '' ? null : parts[1];
-                const unit = parts[2] === 'null' || parts[2] === '' ? null : parts[2];
-                const method = parts[3] === 'null' || parts[3] === '' ? null : parts[3];
-                const refRangeText = parts[4];
-                const refHigh = parts[5] === 'null' ? null : parseFloat(parts[5]);
-                const refLow = parts[6] === 'null' ? null : parseFloat(parts[6]);
-
-                const resultObj = {
-                  type: 'path',
-                  serviceItemName: testName,
-                  value: value,
-                  unit: unit,
-                  method: method,
-                  referenceRange: {
-                    high: Number.isNaN(refHigh) ? null : refHigh,
-                    low: Number.isNaN(refLow) ? null : refLow,
-                    referenceRange: refRangeText
-                  }
-                };
-
-                pageResults.push(resultObj);
-              } else {
-                // DEBUG: Log lines that don't match expected format
-                console.warn(`[GEMINI PAGEWISE] Page ${pageNumber} skipped line (parts.length=${parts.length}): ${line}`);
-              }
-            }
-
-            // Get token usage for this page
+            // Get token usage
             const usageMetadata = result.response.usageMetadata;
             const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
             const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
-            // Calculate cost even if output is 0 (input-only cost)
             const pageCost = ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000;
-
-            // Validation: Check if all values are null
-            if (pageResults.length > 0 && pageResults.every(r => !r.value || r.value === 'null')) {
-              console.error(`[GEMINI PAGEWISE] ⚠️ WARNING Page ${pageNumber}: All ${pageResults.length} values are null/empty!`);
-              console.error(`[GEMINI PAGEWISE] Sample raw lines for debugging:`, lines.slice(0, 3));
-            }
 
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}f. Parameters extracted: ${pageResults.length}`);
             console.log(`[GEMINI PAGEWISE] 7.${pageNumber}g. Tokens: ${inputTokens} input, ${outputTokens} output`);
-            console.log(`[GEMINI PAGEWISE] 7.${pageNumber}h. Cost: $${pageCost.toFixed(6)}`);
 
             // Log page metric to audit
             if (requestId) {
@@ -928,16 +1324,19 @@ The pages in this lab report are provided in their original sequential order. Yo
               });
             }
 
-            // Return page data (will be collected by Promise.all)
+            // Add delay between pages for stability
+            await sleep(PAGE_CALL_DELAY_MS);
+
             return {
               pageNumber: pageNumber,
               rawResponse: response,
               results: pageResults,
-              labName: labNameFromPage,
-              patientName: patientNameFromPage,
-              patientAge: patientAgeFromPage,
-              patientGender: patientGenderFromPage,
-              dateOfTest: dateOfTestFromPage,
+              wasNoTestData: wasNoTestData, // Track if page explicitly had no test data
+              labName: null, // Only Page 1 extracts headers
+              patientName: null,
+              patientAge: null,
+              patientGender: null,
+              dateOfTest: null,
               extractionMetadata: {
                 responseLength: response.length,
                 parametersExtracted: pageResults.length,
@@ -948,6 +1347,7 @@ The pages in this lab report are provided in their original sequential order. Yo
               },
               extractedAt: new Date()
             };
+
           } catch (pageError) {
             const pageErrorDuration = ((Date.now() - pageStartTime) / 1000).toFixed(2);
             console.error(`[GEMINI PAGEWISE] 7.${pageNumber}x. ❌ ERROR processing page: ${pageError.message}`);
@@ -963,7 +1363,8 @@ The pages in this lab report are provided in their original sequential order. Yo
               pageError.message.includes('ECONNRESET') ||
               pageError.message.includes('ETIMEDOUT') ||
               pageError.message.includes('network') ||
-              pageError.message.includes('socket');
+              pageError.message.includes('socket') ||
+              pageError.message.includes('fetch failed');
 
             const isAuthError =
               pageError.message.includes('401') ||
@@ -981,7 +1382,88 @@ The pages in this lab report are provided in their original sequential order. Yo
               errorCategory = 'AUTH_ERROR';
             }
 
-            // Log page error to audit with comprehensive context
+            // ========== SINGLE RETRY FOR NETWORK ERRORS (non-Page-1 only) ==========
+            // Page 1 has its own retry logic, so we only retry pages 2+
+            if (isNetworkError && pageNumber > 1) {
+              console.log(`[GEMINI PAGEWISE] 7.${pageNumber}y. 🔄 Network error detected, attempting single retry after 2s...`);
+
+              try {
+                // Wait 2 seconds before retry
+                await sleep(2000);
+
+                // Retry with same prompt, callGeminiWithRetry will use next available key
+                console.log(`[QUEUE] Page=${pageNumber} (network-retry), Priority=NORMAL`);
+                const { result: retryResult, keyInfo: retryKeyInfo } = await addToQueue(async () => {
+                  return await this.callGeminiWithRetry(parameterPromptTemplate, imagePart, modelName, 4, requestId);
+                }, { priority: PRIORITY.NORMAL });
+
+                const retryResponse = retryResult.response.text();
+                const retryDuration = ((Date.now() - pageStartTime) / 1000).toFixed(2);
+
+                console.log(`[GEMINI PAGEWISE] 7.${pageNumber}y. ✅ Network retry SUCCESS, Key: ${retryKeyInfo?.keyName || 'N/A'}`);
+
+                // Parse the retry response
+                const retryResults = this.parseParameterResponse(retryResponse);
+                const wasNoTestData = retryResponse.trim().toUpperCase() === 'NO_TEST_DATA';
+
+                // Get token usage
+                const usageMetadata = retryResult.response.usageMetadata;
+                const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+                const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+                const pageCost = ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000;
+
+                console.log(`[GEMINI PAGEWISE] 7.${pageNumber}y. Parameters extracted on retry: ${retryResults.length}`);
+
+                // Log successful retry to audit
+                if (requestId) {
+                  audit.logInfo(requestId, 'PAGE_NETWORK_RETRY_SUCCESS', {
+                    pageNumber,
+                    parametersRecovered: retryResults.length,
+                    apiKey: retryKeyInfo ? `Key ${retryKeyInfo.keyIndex}/${retryKeyInfo.totalKeys} (${retryKeyInfo.keyName})` : 'N/A',
+                    duration: parseFloat(retryDuration)
+                  });
+                }
+
+                // Return successful retry result
+                return {
+                  pageNumber: pageNumber,
+                  rawResponse: retryResponse,
+                  results: retryResults,
+                  wasNoTestData: wasNoTestData,
+                  labName: null,
+                  patientName: null,
+                  patientAge: null,
+                  patientGender: null,
+                  dateOfTest: null,
+                  extractionMetadata: {
+                    responseLength: retryResponse.length,
+                    parametersExtracted: retryResults.length,
+                    processingTime: parseFloat(retryDuration),
+                    inputTokens: inputTokens,
+                    outputTokens: outputTokens,
+                    cost: pageCost,
+                    wasNetworkRetry: true
+                  },
+                  extractedAt: new Date()
+                };
+
+              } catch (retryError) {
+                console.error(`[GEMINI PAGEWISE] 7.${pageNumber}y. ❌ Network retry FAILED: ${retryError.message}`);
+
+                // Log failed retry to audit
+                if (requestId) {
+                  audit.logError(requestId, 'PAGE_NETWORK_RETRY_FAILED', {
+                    pageNumber,
+                    originalError: pageError.message,
+                    retryError: retryError.message
+                  });
+                }
+                // Fall through to return error info below
+              }
+            }
+            // ========== END NETWORK ERROR RETRY ==========
+
+            // Log page error to audit
             if (requestId) {
               audit.logPageMetric(requestId, pageNumber, {
                 duration: parseFloat(pageErrorDuration),
@@ -996,20 +1478,6 @@ The pages in this lab report are provided in their original sequential order. Yo
                   retryable: isRateLimit || isNetworkError
                 }
               });
-
-              // Also log as error with full context
-              audit.logError(requestId, errorCategory, pageError, {
-                step: `GEMINI_PAGE_${pageNumber}`,
-                pageNumber,
-                model: modelName,
-                operation: 'extractFromImagesPageWise',
-                code: isRateLimit ? '429' : undefined,
-                retryable: isRateLimit || isNetworkError,
-                context: {
-                  totalPages: images.length,
-                  imageSize: imageData ? imageData.length : 0
-                }
-              });
             }
 
             // Return error info instead of failing completely
@@ -1020,135 +1488,130 @@ The pages in this lab report are provided in their original sequential order. Yo
               results: []
             };
           }
-        })
+        })()
       );
 
-      // Execute all page processing concurrently
-      console.log('[GEMINI PAGEWISE] 7. Executing concurrent API calls...');
+      // Execute all page processing concurrently (controlled by global queue)
+      console.log('[GEMINI PAGEWISE] 7. Executing page extraction via global queue...');
       let pageResultsArray = await Promise.all(pagePromises);
 
-      // Identify failed pages for retry
-      const failedPages = pageResultsArray.filter(p => p && p.error);
-      const retryStats = {
-        totalRetries: 0,
-        pagesRetried: [],
-        retriedSuccessfully: []
-      };
+      // ============ QUALITY-BASED RETRY LOGIC ============
+      // Check for pages with 0 parameters (Gemini API variance issue)
+      // IMPORTANT: Skip pages that explicitly returned NO_TEST_DATA - they genuinely have no test data
+      const totalExtractedParams = pageResultsArray.reduce((sum, r) => sum + (r?.results?.length || 0), 0);
+      const pagesWithZeroParams = pageResultsArray.filter(r =>
+        r && !r.error && (r.results?.length || 0) === 0 && !r.wasNoTestData
+      );
+      const pagesWithNoTestData = pageResultsArray.filter(r => r && r.wasNoTestData);
+      const pagesWithParams = pageResultsArray.filter(r => r && (r.results?.length || 0) > 0);
 
-      // Retry failed pages (max 2 rounds, reduced concurrency)
-      if (failedPages.length > 0) {
-        console.log(`[GEMINI PAGEWISE] 7a. Retrying ${failedPages.length} failed pages...`);
+      if (pagesWithNoTestData.length > 0) {
+        console.log(`[GEMINI PAGEWISE] 7g. ℹ️ ${pagesWithNoTestData.length} pages returned NO_TEST_DATA (will not retry): ${pagesWithNoTestData.map(p => p.pageNumber).join(', ')}`);
+      }
 
-        for (let retryRound = 1; retryRound <= 2 && failedPages.length > 0; retryRound++) {
-          await sleep(2000); // Wait 2 seconds between retry rounds
-          console.log(`[GEMINI PAGEWISE] 7b. Retry round ${retryRound} for ${failedPages.length} pages...`);
+      // Only retry if: (1) some pages have 0 params (and didn't return NO_TEST_DATA), (2) other pages have params
+      if (pagesWithZeroParams.length > 0 && pagesWithParams.length > 0 && pageResultsArray.length > 1) {
+        console.log(`[GEMINI PAGEWISE] 7h. ⚠️ ${pagesWithZeroParams.length} pages extracted 0 params (excluding NO_TEST_DATA). Attempting quality-based retry...`);
 
-          const retryLimit = pLimit(5); // Reduced concurrency for retries
-          const retryPromises = failedPages.map((failedPage) =>
-            retryLimit(async () => {
-              const pageNumber = failedPage.pageNumber;
-              const pageIndex = pageNumber - 1;
-              const base64Image = images[pageIndex];
+        // Simplified retry prompt focused ONLY on parameter extraction
+        const retryPrompt = `You are a medical lab report digitization system.
 
-              if (!base64Image) return failedPage;
+Extract ALL test parameters from this lab report page and return in this format:
+TEST_NAME | VALUE | UNIT | METHOD | REF_RANGE_TEXT | REF_HIGH | REF_LOW
 
-              retryStats.totalRetries++;
-              retryStats.pagesRetried.push(pageNumber);
+CRITICAL INSTRUCTIONS:
+- Extract ALL test results with values visible on this page
+- Include physical examination findings (Blood Pressure, Pulse Rate, etc.) with null for REF_HIGH/REF_LOW
+- Include qualitative results like "Normal", "Positive", "Negative" as the VALUE
+- REF_RANGE_TEXT: Always extract the COMPLETE reference range text
+- REF_HIGH/REF_LOW: Only populate if a SINGLE unambiguous numeric range exists
+- If MULTIPLE ranges exist (age-specific, gender-specific), set REF_HIGH and REF_LOW to "null"
+- If reference range is ambiguous or you're unsure, use null for BOTH REF_HIGH and REF_LOW
+- Return ONLY pipe-separated data, one test per line
+- Do NOT include any explanatory text or markdown
+- Do NOT return header information (LAB_NAME, PATIENT_NAME, etc.)
+- NON-TEST PAGES: If this page contains ONLY terms & conditions, disclaimers, or interpretation summaries (no actual lab test results), return: NO_TEST_DATA
 
-              try {
-                console.log(`[GEMINI PAGEWISE] 7c. Retrying page ${pageNumber}...`);
-                const imagePart = {
-                  inlineData: {
-                    data: base64Image,
-                    mimeType: 'image/png'
-                  }
-                };
+DO NOT OVER-EXTRACT FROM DESCRIPTIVE TEXT:
+For RADIOLOGY/IMAGING reports (Ultrasound, CT, MRI, X-Ray, ECG findings):
+- Each organ/finding should be ONE entry, not multiple
+- Keep the FULL descriptive text as the VALUE (e.g., "Normal in size (12.2 cms) and echotexture...")
+- Do NOT split into separate rows like "LIVER SIZE", "LIVER ECHOTEXTURE", etc.
+For LABORATORY reports (CBC, LFT, KFT, etc.) each discrete test value IS a separate entry.
 
-                const model = this.genAI.getGenerativeModel({
-                  model: modelName,
-                  generationConfig: { temperature: 0, topP: 1, topK: 1, maxOutputTokens: 8192 },
-                  safetySettings: [
-                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
-                  ]
-                });
+Example output:
+Haemoglobin | 14.5 | gm/dL | N/A | 13-17 | 17 | 13
+Blood Pressure | 110/70 | Mm/Hg | N/A | null | null | null
+LIVER | Normal in size (12.2 cms) and echotexture with smooth contours. No focal lesions. | N/A | N/A | null | null | null`;
 
-                const result = await model.generateContent([promptTemplate, imagePart]);
-                const response = result.response.text();
+        // Process retries sequentially to avoid rate limiting
+        for (const pageResult of pagesWithZeroParams) {
+          const pageNumber = pageResult.pageNumber;
+          const pageImage = images[pageNumber - 1]; // 0-indexed
 
-                // Parse response (simplified)
-                const allLines = response.trim().split('\n').filter(l => l.trim().length > 0);
-                const lines = allLines.filter(l => l.includes('|'));
-                const pageResults = [];
+          if (!pageImage) continue;
 
-                for (const line of lines) {
-                  const parts = line.split('|').map(p => p.trim());
-                  if (parts.length >= 7) {
-                    pageResults.push({
-                      type: 'path',
-                      serviceItemName: parts[0],
-                      value: parts[1] === 'null' || parts[1] === '' ? null : parts[1],
-                      unit: parts[2] === 'null' || parts[2] === '' ? null : parts[2],
-                      method: parts[3] === 'null' || parts[3] === '' ? null : parts[3],
-                      referenceRange: {
-                        high: parts[5] === 'null' ? null : parseFloat(parts[5]),
-                        low: parts[6] === 'null' ? null : parseFloat(parts[6]),
-                        referenceRange: parts[4]
-                      }
-                    });
-                  }
-                }
+          console.log(`[GEMINI PAGEWISE] 7h. Retrying Page ${pageNumber} with simplified prompt...`);
 
-                const usageMetadata = result.response.usageMetadata;
-                const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
-                const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+          // Wait before retry
+          await sleep(RETRY_INITIAL_DELAY_MS);
 
-                retryStats.retriedSuccessfully.push(pageNumber);
-                console.log(`[GEMINI PAGEWISE] 7d. Page ${pageNumber} retry SUCCEEDED: ${pageResults.length} parameters`);
-
-                return {
-                  pageNumber,
-                  rawResponse: response,
-                  results: pageResults,
-                  labName: null,
-                  extractionMetadata: {
-                    responseLength: response.length,
-                    parametersExtracted: pageResults.length,
-                    inputTokens,
-                    outputTokens,
-                    cost: ((inputTokens * 0.30) + (outputTokens * 2.50)) / 1000000,
-                    wasRetried: true
-                  },
-                  extractedAt: new Date()
-                };
-              } catch (retryError) {
-                console.error(`[GEMINI PAGEWISE] 7e. Page ${pageNumber} retry FAILED: ${retryError.message}`);
-                return failedPage; // Return original failed result
+          try {
+            const imagePart = {
+              inlineData: {
+                data: pageImage,
+                mimeType: 'image/png'
               }
-            })
-          );
+            };
 
-          const retryResults = await Promise.all(retryPromises);
+            // Execute retry through priority queue based on page number
+            // Page 1 uses HIGH priority, Pages 2+ use NORMAL priority
+            const retryPriority = pageNumber === 1 ? PRIORITY.HIGH : PRIORITY.NORMAL;
+            console.log(`[QUEUE] Page=${pageNumber} (retry), Priority=${pageNumber === 1 ? 'HIGH' : 'NORMAL'}`);
+            let retryKeyInfo = null;
+            const { result, keyInfo: retryKeyInfoResult } = await addToQueue(async () => {
+              return await this.callGeminiWithRetry(retryPrompt, imagePart, modelName, 4, requestId);
+            }, { priority: retryPriority });
+            retryKeyInfo = retryKeyInfoResult;
 
-          // Update pageResultsArray with successful retries
-          for (const retryResult of retryResults) {
-            if (!retryResult.error) {
-              const idx = pageResultsArray.findIndex(p => p.pageNumber === retryResult.pageNumber);
-              if (idx !== -1) {
-                pageResultsArray[idx] = retryResult;
+            const response = result.response.text();
+
+            // Parse retry response using helper
+            const retryResults = this.parseParameterResponse(response);
+
+            console.log(`[GEMINI PAGEWISE] 7i. Page ${pageNumber} retry: ${retryResults.length} params recovered, Key: ${retryKeyInfo?.keyName || 'N/A'}`);
+
+            if (retryResults.length > 0) {
+              // Update the page result with recovered data
+              pageResult.results = retryResults;
+              pageResult.extractionMetadata = pageResult.extractionMetadata || {};
+              pageResult.extractionMetadata.parametersExtracted = retryResults.length;
+              pageResult.extractionMetadata.wasRetried = true;
+              pageResult.extractionMetadata.retryKey = retryKeyInfo?.keyName;
+
+              console.log(`[GEMINI PAGEWISE] 7j. ✓ Page ${pageNumber} retry SUCCESS: ${retryResults.length} params recovered`);
+
+              if (requestId) {
+                audit.logInfo(requestId, 'PAGE_RETRY_SUCCESS', {
+                  pageNumber,
+                  parametersRecovered: retryResults.length,
+                  apiKey: retryKeyInfo ? `Key ${retryKeyInfo.keyIndex}/${retryKeyInfo.totalKeys} (${retryKeyInfo.keyName})` : 'N/A'
+                });
               }
             }
+
+            // Wait between retries
+            await sleep(RETRY_BETWEEN_DELAY_MS);
+
+          } catch (retryError) {
+            console.error(`[GEMINI PAGEWISE] 7k. Page ${pageNumber} retry FAILED: ${retryError.message}`);
+            if (requestId) {
+              audit.logError(requestId, 'PAGE_RETRY_FAILED', { pageNumber, error: retryError.message });
+            }
           }
-
-          // Update failed pages list for next round
-          failedPages.length = 0;
-          failedPages.push(...retryResults.filter(r => r.error));
         }
-
-        console.log(`[GEMINI PAGEWISE] 7f. Retry complete: ${retryStats.retriedSuccessfully.length} pages recovered`);
       }
+      // ============ END QUALITY-BASED RETRY LOGIC ============
 
       // Process results and aggregate data
       console.log('[GEMINI PAGEWISE] 8. Aggregating results from all pages...');

@@ -439,6 +439,7 @@ const AllReportsList: React.FC = () => {
             }}
           >
             <Tab label="All" value="all" />
+            <Tab label="Uploaded" value="uploaded" />
             <Tab label="Processing" value="processing" />
             <Tab label="Pending Review" value="ready" />
             <Tab label="Approved" value="approved" />
@@ -647,11 +648,20 @@ const AllReportsList: React.FC = () => {
                               <DownloadIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          {/* Reprocess button - show when processing is incomplete or has error */}
-                          {(report.processingIssues?.hasIncompleteProcessing || report.status === 'error') && (
-                            <Tooltip title={report.processingIssues?.hasIncompleteProcessing
-                              ? `Reprocess (${report.processingIssues.message})`
-                              : "Reprocess report"}>
+                          {/* Reprocess button - show for: error/uploaded (all users), ready (admin only), or incomplete processing */}
+                          {(
+                            report.processingIssues?.hasIncompleteProcessing ||
+                            report.status === 'error' ||
+                            report.status === 'uploaded' ||
+                            (report.status === 'ready' && isAdmin)
+                          ) && (
+                            <Tooltip title={
+                              report.processingIssues?.hasIncompleteProcessing
+                                ? `Reprocess (${report.processingIssues.message})`
+                                : report.status === 'uploaded'
+                                  ? "Process report"
+                                  : "Reprocess report"
+                            }>
                               <IconButton
                                 size="small"
                                 onClick={(e) => {
@@ -675,7 +685,7 @@ const AllReportsList: React.FC = () => {
                             </Tooltip>
                           )}
                           {/* Only show delete button if report is not approved/published AND (user is admin OR owns the report) */}
-                          {report.status !== 'approved' && report.status !== 'published' && (isAdmin || report.uploadedBy.id === user?.id) && (
+                          {report.status !== 'approved' && report.status !== 'published' && (isAdmin || report.uploadedBy._id === user?.id) && (
                             <Tooltip title="Delete Report">
                               <IconButton
                                 size="small"

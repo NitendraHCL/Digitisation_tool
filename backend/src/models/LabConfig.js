@@ -100,6 +100,19 @@ const labConfigSchema = new mongoose.Schema({
     disableBulkUpload: {
       type: Boolean,
       default: false
+    },
+    // Concurrency settings (requires server restart)
+    geminiConcurrency: {
+      type: Number,
+      default: 8,
+      min: 1,
+      max: 15
+    },
+    pdfConcurrency: {
+      type: Number,
+      default: 2,
+      min: 1,
+      max: 10
     }
   },
 
@@ -153,7 +166,10 @@ labConfigSchema.statics.getConfig = async function() {
         retentionDays: 365,
         auditLogEnabled: true,
         defaultExtractionMethod: 'image',
-        defaultModel: 'gemini-2.5-flash'
+        defaultModel: 'gemini-2.5-flash',
+        disableBulkUpload: false,
+        geminiConcurrency: 8,
+        pdfConcurrency: 2
       },
       thresholdPercentage: 200,
       flagThreshold: 50

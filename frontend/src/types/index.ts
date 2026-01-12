@@ -1,6 +1,7 @@
 // User types
 export interface User {
   id: string;
+  _id?: string; // MongoDB _id for populated documents
   email: string;
   name: string;
   role: 'super_admin' | 'admin' | 'nurse';

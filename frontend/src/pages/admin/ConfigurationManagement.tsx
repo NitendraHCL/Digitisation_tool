@@ -82,6 +82,8 @@ interface SystemConfig {
   defaultExtractionMethod?: string;
   defaultModel?: string;
   disableBulkUpload: boolean;
+  geminiConcurrency: number;
+  pdfConcurrency: number;
 }
 
 const ConfigurationManagement: React.FC = () => {
@@ -105,6 +107,8 @@ const ConfigurationManagement: React.FC = () => {
     defaultModel: 'gemini-2.5-flash',
     auditLogEnabled: true,
     disableBulkUpload: false,
+    geminiConcurrency: 8,
+    pdfConcurrency: 2,
   });
 
   const [labs, setLabs] = useState<LabConfig[]>([
@@ -674,6 +678,90 @@ const ConfigurationManagement: React.FC = () => {
                 <MenuItem value="pdf">Raw PDF (Direct)</MenuItem>
               </Select>
             </FormControl>
+          </Grid>
+
+          {/* Concurrency Settings Section */}
+          <Grid size={{ xs: 12 }}>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px', color: '#111827', mb: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Concurrency Settings
+            </Typography>
+            <Alert severity="warning" sx={{ mb: 2, fontSize: '12px' }}>
+              <strong>Critical:</strong> These settings control API rate limiting. Changing them requires a server restart to take effect. Do NOT exceed recommended values without load testing.
+            </Alert>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card variant="outlined" sx={{ border: '1px solid #E5E7EB', boxShadow: 'none' }}>
+              <CardContent sx={{ p: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280' }}>
+                    Gemini API Concurrency
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '16px', color: '#4361EE' }}>
+                    {systemConfig.geminiConcurrency}
+                  </Typography>
+                </Box>
+                <Box sx={{ px: 0.5 }}>
+                  <Slider
+                    value={systemConfig.geminiConcurrency}
+                    onChange={(e, value) => {
+                      setSystemConfig(prev => ({ ...prev, geminiConcurrency: value as number }));
+                      setHasChanges(true);
+                    }}
+                    min={1}
+                    max={15}
+                    step={1}
+                    marks={[
+                      { value: 1, label: '1' },
+                      { value: 8, label: '8' },
+                      { value: 15, label: '15' }
+                    ]}
+                    sx={{ color: '#4361EE' }}
+                  />
+                </Box>
+                <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
+                  Max concurrent Gemini API calls. Recommended: 6-8. Default: 8
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card variant="outlined" sx={{ border: '1px solid #E5E7EB', boxShadow: 'none' }}>
+              <CardContent sx={{ p: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '13px', color: '#6B7280' }}>
+                    PDF Processing Concurrency
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '16px', color: '#10B981' }}>
+                    {systemConfig.pdfConcurrency}
+                  </Typography>
+                </Box>
+                <Box sx={{ px: 0.5 }}>
+                  <Slider
+                    value={systemConfig.pdfConcurrency}
+                    onChange={(e, value) => {
+                      setSystemConfig(prev => ({ ...prev, pdfConcurrency: value as number }));
+                      setHasChanges(true);
+                    }}
+                    min={1}
+                    max={10}
+                    step={1}
+                    marks={[
+                      { value: 1, label: '1' },
+                      { value: 2, label: '2' },
+                      { value: 5, label: '5' },
+                      { value: 10, label: '10' }
+                    ]}
+                    sx={{ color: '#10B981' }}
+                  />
+                </Box>
+                <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: '12px' }}>
+                  Max PDFs processed simultaneously. Recommended: 2. Default: 2
+                </Typography>
+              </CardContent>
+            </Card>
           </Grid>
         </Grid>
       </Paper>

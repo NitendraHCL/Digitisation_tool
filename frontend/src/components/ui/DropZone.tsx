@@ -7,6 +7,7 @@ interface DropZoneProps {
   accept?: Record<string, string[]>;
   multiple?: boolean;
   maxSize?: number;
+  maxFiles?: number;
   disabled?: boolean;
 }
 
@@ -15,6 +16,7 @@ const DropZone: React.FC<DropZoneProps> = ({
   accept = { 'application/pdf': ['.pdf'] },
   multiple = true,
   maxSize = 30 * 1024 * 1024, // 30MB default
+  maxFiles,
   disabled = false,
 }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -93,7 +95,11 @@ const DropZone: React.FC<DropZoneProps> = ({
         }}
       >
         Maximum file size: {Math.round(maxSize / (1024 * 1024))}MB per file •{' '}
-        {multiple ? 'Multiple files allowed' : 'Single file only'}
+        {multiple
+          ? maxFiles
+            ? `Up to ${maxFiles} files allowed`
+            : 'Multiple files allowed'
+          : 'Single file only'}
       </div>
     </div>
   );

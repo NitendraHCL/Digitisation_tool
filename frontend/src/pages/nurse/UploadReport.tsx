@@ -64,6 +64,8 @@ const UploadReport: React.FC = () => {
     }
   }, [batchStartTime, processing]);
 
+  const MAX_BULK_FILES = 10;
+
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       console.log('[UPLOAD] Files selected:', acceptedFiles.length);
@@ -72,7 +74,18 @@ const UploadReport: React.FC = () => {
 
       if (pdfFiles.length > 0) {
         // If bulk upload is disabled, only take the first file
-        const filesToUse = bulkUploadDisabled ? [pdfFiles[0]] : pdfFiles;
+        // If bulk upload is enabled, limit to MAX_BULK_FILES
+        let filesToUse: File[];
+        if (bulkUploadDisabled) {
+          filesToUse = [pdfFiles[0]];
+        } else if (pdfFiles.length > MAX_BULK_FILES) {
+          filesToUse = pdfFiles.slice(0, MAX_BULK_FILES);
+          enqueueSnackbar(`Maximum ${MAX_BULK_FILES} files allowed. Only first ${MAX_BULK_FILES} files will be uploaded.`, {
+            variant: 'warning',
+          });
+        } else {
+          filesToUse = pdfFiles;
+        }
 
         setFiles(filesToUse);
         setActiveStep(1);
@@ -92,7 +105,7 @@ const UploadReport: React.FC = () => {
       'application/pdf': ['.pdf'],
     },
     multiple: !bulkUploadDisabled,
-    maxFiles: bulkUploadDisabled ? 1 : undefined,
+    maxFiles: bulkUploadDisabled ? 1 : MAX_BULK_FILES,
     maxSize: 30 * 1024 * 1024,
   });
 
@@ -164,69 +177,67 @@ const UploadReport: React.FC = () => {
     const batchStart = Date.now();
     setBatchStartTime(batchStart);
 
+    // Initialize all reports as 'processing'
     const processingReports = reports.map((r) => ({ ...r, status: 'processing' as const }));
     setUploadedReports(processingReports);
-    setCurrentProcessingIndex(reports.length - 1);
 
-    try {
-      const response = await api.post('/reports/process-multiple', {
-        reportIds: reports.map((r) => r.reportId),
-      });
+    // Track results as they complete
+    const resultsRef: UploadedReport[] = [...processingReports];
+    let completedCount = 0;
 
-      if (response.data.success) {
-        const batchData = response.data.data;
+    // Process each report individually for real-time updates
+    const processReport = async (report: UploadedReport, index: number) => {
+      const startTime = Date.now();
+      try {
+        const response = await api.post(`/reports/${report.reportId}/process`);
+        const processingTime = (Date.now() - startTime) / 1000;
 
-        const resultsMap = new Map();
-
-        batchData.successful.forEach((result: any) => {
-          resultsMap.set(result.reportId, {
+        if (response.data.success) {
+          resultsRef[index] = {
+            ...report,
             status: 'completed' as const,
-            processingTime: parseFloat(result.processingTime.replace('s', '')),
-          });
-        });
-
-        batchData.failed.forEach((result: any) => {
-          resultsMap.set(result.reportId, {
+            processingTime,
+          };
+        } else {
+          resultsRef[index] = {
+            ...report,
             status: 'error' as const,
-            error: result.error,
-          });
-        });
-
-        const finalReports = reports.map((report) => {
-          const result = resultsMap.get(report.reportId);
-          if (result) {
-            return { ...report, ...result };
-          }
-          return { ...report, status: 'error' as const, error: 'No result returned' };
-        });
-
-        setUploadedReports(finalReports);
-        setShowSuccessDialog(true);
-
-        const successCount = finalReports.filter((r) => r.status === 'completed').length;
-        enqueueSnackbar(
-          `Processed ${successCount}/${reports.length} reports in parallel!`,
-          { variant: successCount === reports.length ? 'success' : 'warning' }
-        );
-      } else {
-        throw new Error(response.data.message || 'Batch processing failed');
+            error: response.data.message || 'Processing failed',
+          };
+        }
+      } catch (error: any) {
+        resultsRef[index] = {
+          ...report,
+          status: 'error' as const,
+          error: error.response?.data?.message || 'Processing failed',
+        };
       }
-    } catch (error: any) {
-      const errorReports = reports.map((r) => ({
-        ...r,
-        status: 'error' as const,
-        error: error.response?.data?.message || 'Batch processing failed',
-      }));
-      setUploadedReports(errorReports);
 
-      enqueueSnackbar(error.response?.data?.message || 'Batch processing failed', {
-        variant: 'error',
-      });
-    } finally {
-      setProcessing(false);
-      setBatchStartTime(null);
-      setCurrentProcessingIndex(-1);
-    }
+      completedCount++;
+      setCurrentProcessingIndex(completedCount);
+
+      // Update state immediately so UI reflects completed reports
+      setUploadedReports([...resultsRef]);
+
+      // Show notification for first completed report
+      if (completedCount === 1 && resultsRef[index].status === 'completed') {
+        enqueueSnackbar(`${report.fileName} ready for review!`, { variant: 'success' });
+      }
+    };
+
+    // Start all processing in parallel (backend handles concurrency via CONCURRENT_PDF_LIMIT)
+    await Promise.all(reports.map((report, index) => processReport(report, index)));
+
+    // All done
+    setProcessing(false);
+    setBatchStartTime(null);
+    setShowSuccessDialog(true);
+
+    const successCount = resultsRef.filter((r) => r.status === 'completed').length;
+    enqueueSnackbar(
+      `Processed ${successCount}/${reports.length} reports!`,
+      { variant: successCount === reports.length ? 'success' : 'warning' }
+    );
   };
 
   const handleReset = () => {
@@ -288,7 +299,7 @@ const UploadReport: React.FC = () => {
             lineHeight: theme.typography.lineHeights.normal,
           }}
         >
-          Upload multiple lab report PDFs for AI-powered data extraction
+          Upload {bulkUploadDisabled ? 'a' : `up to ${MAX_BULK_FILES}`} lab report PDF{bulkUploadDisabled ? '' : 's'} for AI-powered data extraction
         </p>
       </div>
 
@@ -369,7 +380,12 @@ const UploadReport: React.FC = () => {
           {/* STEP 1: File Selection */}
           {activeStep === 0 && (
             <div>
-              <DropZone onDrop={onDrop} multiple={!bulkUploadDisabled} maxSize={30 * 1024 * 1024} />
+              <DropZone
+                onDrop={onDrop}
+                multiple={!bulkUploadDisabled}
+                maxSize={30 * 1024 * 1024}
+                maxFiles={bulkUploadDisabled ? 1 : MAX_BULK_FILES}
+              />
             </div>
           )}
 
@@ -453,19 +469,24 @@ const UploadReport: React.FC = () => {
               {processing && (
                 <div style={{ marginBottom: theme.spacing.lg }}>
                   <ProgressBar
-                    value={currentProcessingIndex + 1}
+                    value={currentProcessingIndex}
                     max={uploadedReports.length}
-                    label={`Processing file ${currentProcessingIndex + 1} of ${uploadedReports.length}`}
+                    label={`${currentProcessingIndex} of ${uploadedReports.length} completed`}
                   />
                   <div
                     style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
                       fontSize: theme.typography.sizes.small,
-                      color: theme.colors.accent,
                       marginTop: theme.spacing.xs,
-                      textAlign: 'right',
                     }}
                   >
-                    {currentElapsedTime.toFixed(1)}s elapsed
+                    <span style={{ color: theme.colors.success }}>
+                      {currentProcessingIndex > 0 && `${currentProcessingIndex} ready for review`}
+                    </span>
+                    <span style={{ color: theme.colors.accent }}>
+                      {currentElapsedTime.toFixed(1)}s elapsed
+                    </span>
                   </div>
                 </div>
               )}
@@ -481,14 +502,31 @@ const UploadReport: React.FC = () => {
                 showStatus
               />
 
-              {uploadedReports.every((r) => r.status === 'completed' || r.status === 'error') && (
+              {/* Show status alert - updates in real-time */}
+              {uploadedReports.some((r) => r.status === 'completed' || r.status === 'error') && (
                 <AlertBox
                   variant={
-                    uploadedReports.every((r) => r.status === 'completed') ? 'success' : 'warning'
+                    !processing && uploadedReports.every((r) => r.status === 'completed')
+                      ? 'success'
+                      : uploadedReports.some((r) => r.status === 'completed')
+                      ? 'info'
+                      : 'warning'
                   }
                 >
-                  {uploadedReports.filter((r) => r.status === 'completed').length} of{' '}
-                  {uploadedReports.length} reports processed successfully
+                  {processing ? (
+                    <>
+                      <strong>{uploadedReports.filter((r) => r.status === 'completed').length}</strong> of{' '}
+                      {uploadedReports.length} reports ready for review.{' '}
+                      <span style={{ color: theme.colors.textSecondary }}>
+                        ({uploadedReports.filter((r) => r.status === 'processing').length} still processing...)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {uploadedReports.filter((r) => r.status === 'completed').length} of{' '}
+                      {uploadedReports.length} reports processed successfully
+                    </>
+                  )}
                 </AlertBox>
               )}
 
@@ -499,7 +537,7 @@ const UploadReport: React.FC = () => {
                   marginTop: theme.spacing.lg,
                 }}
               >
-                <CustomButton variant="secondary" onClick={handleReset}>
+                <CustomButton variant="secondary" onClick={handleReset} disabled={processing}>
                   Upload New Reports
                 </CustomButton>
                 <CustomButton
@@ -507,7 +545,9 @@ const UploadReport: React.FC = () => {
                   onClick={handleReviewReports}
                   disabled={!uploadedReports.some((r) => r.status === 'completed')}
                 >
-                  Review Reports
+                  {processing && uploadedReports.some((r) => r.status === 'completed')
+                    ? `Review ${uploadedReports.filter((r) => r.status === 'completed').length} Ready Report${uploadedReports.filter((r) => r.status === 'completed').length !== 1 ? 's' : ''}`
+                    : 'Review Reports'}
                 </CustomButton>
               </div>
             </div>

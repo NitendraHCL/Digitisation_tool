@@ -290,10 +290,10 @@ async function processReportInternal(reportId, extractionMethod = null, model = 
       console.log('[PROCESS] 10. Calling', modelName, 'with images (PAGE-BY-PAGE)...');
       const gptStartTime = Date.now();
       audit.logStep(requestId, 'LLM_EXTRACTION_START', {
-        message: `${modelName} - ${images.length} pages - 15 concurrent`
+        message: `${modelName} - ${images.length} pages - queue-controlled with retry`
       });
 
-      // Route to appropriate model - USING PAGE-WISE EXTRACTION (15 parallel API calls)
+      // Route to appropriate model - USING PAGE-WISE EXTRACTION with rate-limit aware retry
       if (model === 'gpt-4o' || model === 'gpt-4.1') {
         const gptModel = model === 'gpt-4.1' ? 'gpt-4.1-2025-04-14' : 'gpt-4o';
         extractedData = await gpt4oExtractor.extractFromImagesPageWise(images, report.orderId, gptModel, requestId);
@@ -954,8 +954,60 @@ const processMultipleReports = async (req, res) => {
       });
     }
 
-    // Get concurrency limit from environment (default: 5)
-    const concurrencyLimit = parseInt(process.env.CONCURRENT_PDF_LIMIT || '5', 10);
+    // ========== VALIDATION: Check all reports exist and log mismatches ==========
+    console.log('[PROCESS BATCH] Validating report IDs...');
+    const Report = require('../models/report.model');
+
+    // Fetch all reports with matching IDs
+    const existingReports = await Report.find({ _id: { $in: reportIds } }).select('_id status originalFileName');
+    const existingIds = new Set(existingReports.map(r => r._id.toString()));
+
+    // Find missing IDs
+    const missingIds = reportIds.filter(id => !existingIds.has(id));
+    if (missingIds.length > 0) {
+      console.error('[PROCESS BATCH] ⚠️ WARNING: Some report IDs not found in database:', missingIds);
+    }
+
+    // Check for reports not in 'uploaded' or 'processing' status
+    const invalidStatusReports = existingReports.filter(r =>
+      r.status !== 'uploaded' && r.status !== 'processing' && r.status !== 'error'
+    );
+    if (invalidStatusReports.length > 0) {
+      console.log('[PROCESS BATCH] ℹ️ Reports with non-uploadable status (may be already processed):');
+      invalidStatusReports.forEach(r => {
+        console.log(`[PROCESS BATCH]   - ${r._id}: status=${r.status}, file=${r.originalFileName}`);
+      });
+    }
+
+    // Log validation summary
+    console.log('[PROCESS BATCH] ========================================');
+    console.log('[PROCESS BATCH] VALIDATION SUMMARY:');
+    console.log(`[PROCESS BATCH]   Requested: ${reportIds.length} reports`);
+    console.log(`[PROCESS BATCH]   Found in DB: ${existingReports.length} reports`);
+    console.log(`[PROCESS BATCH]   Missing: ${missingIds.length} reports`);
+    console.log(`[PROCESS BATCH]   Already processed: ${invalidStatusReports.length} reports`);
+    console.log('[PROCESS BATCH] ========================================');
+
+    // Filter to only process valid IDs that exist
+    const validReportIds = reportIds.filter(id => existingIds.has(id));
+    if (validReportIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid report IDs to process',
+        details: {
+          requested: reportIds.length,
+          missing: missingIds.length
+        }
+      });
+    }
+
+    if (validReportIds.length !== reportIds.length) {
+      console.warn(`[PROCESS BATCH] ⚠️ Processing ${validReportIds.length} of ${reportIds.length} requested reports`);
+    }
+    // ========== END VALIDATION ==========
+
+    // Get concurrency limit from environment (default: 2 for stability with global Gemini queue)
+    const concurrencyLimit = parseInt(process.env.CONCURRENT_PDF_LIMIT || '2', 10);
     console.log('[PROCESS BATCH] Concurrency limit:', concurrencyLimit);
     console.log('[PROCESS BATCH] ========================================');
 
@@ -970,19 +1022,19 @@ const processMultipleReports = async (req, res) => {
     // p-limit ensures only 'concurrencyLimit' PDFs process concurrently
     // As one finishes, the next one starts automatically
     console.log('[PROCESS BATCH] Creating processing queue...');
-    const promises = reportIds.map((reportId, index) => {
+    const promises = validReportIds.map((reportId, index) => {
       return limit(async () => {
         const now = new Date();
         const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
 
-        console.log(`[PROCESS BATCH] [${index + 1}/${reportIds.length}] 🚀 STARTING at ${timestamp} - Report: ${reportId}`);
+        console.log(`[PROCESS BATCH] [${index + 1}/${validReportIds.length}] 🚀 STARTING at ${timestamp} - Report: ${reportId}`);
         const startTime = Date.now();
 
         try {
           const result = await processReportInternal(reportId, extractionMethod, model);
           const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-          console.log(`[PROCESS BATCH] [${index + 1}/${reportIds.length}] ✓ COMPLETED in ${duration}s - Report: ${reportId}`);
+          console.log(`[PROCESS BATCH] [${index + 1}/${validReportIds.length}] ✓ COMPLETED in ${duration}s - Report: ${reportId}`);
 
           return {
             success: true,
@@ -992,7 +1044,7 @@ const processMultipleReports = async (req, res) => {
         } catch (error) {
           const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-          console.error(`[PROCESS BATCH] [${index + 1}/${reportIds.length}] ✗ FAILED after ${duration}s - Report: ${reportId}`);
+          console.error(`[PROCESS BATCH] [${index + 1}/${validReportIds.length}] ✗ FAILED after ${duration}s - Report: ${reportId}`);
           console.error(`[PROCESS BATCH] Error:`, error.message);
 
           return {
@@ -1025,26 +1077,31 @@ const processMultipleReports = async (req, res) => {
     console.log('[PROCESS BATCH] ========================================');
     console.log('[PROCESS BATCH] ✅ BATCH PROCESSING COMPLETE');
     console.log('[PROCESS BATCH] ========================================');
-    console.log('[PROCESS BATCH] Total reports:', reportIds.length);
+    console.log('[PROCESS BATCH] Requested reports:', reportIds.length);
+    console.log('[PROCESS BATCH] Valid reports processed:', validReportIds.length);
     console.log('[PROCESS BATCH] Successful:', results.length);
     console.log('[PROCESS BATCH] Failed:', errors.length);
+    console.log('[PROCESS BATCH] Skipped (missing/invalid):', missingIds.length);
     console.log('[PROCESS BATCH] Total time:', totalDuration + 's');
-    console.log('[PROCESS BATCH] Average time per report:', (parseFloat(totalDuration) / reportIds.length).toFixed(2) + 's');
+    console.log('[PROCESS BATCH] Average time per report:', (parseFloat(totalDuration) / validReportIds.length).toFixed(2) + 's');
     console.log('[PROCESS BATCH] ========================================');
 
     // Return comprehensive results
     res.json({
       success: true,
-      message: `Processed ${results.length} of ${reportIds.length} reports successfully`,
+      message: `Processed ${results.length} of ${validReportIds.length} reports successfully`,
       data: {
-        totalReports: reportIds.length,
+        requestedReports: reportIds.length,
+        validReports: validReportIds.length,
         successCount: results.length,
         errorCount: errors.length,
+        skippedCount: missingIds.length,
         totalProcessingTime: totalDuration + 's',
-        averageTimePerReport: (parseFloat(totalDuration) / reportIds.length).toFixed(2) + 's',
+        averageTimePerReport: (parseFloat(totalDuration) / validReportIds.length).toFixed(2) + 's',
         concurrencyLimit,
         successful: results,
-        failed: errors
+        failed: errors,
+        skipped: missingIds.length > 0 ? missingIds : undefined
       }
     });
 
@@ -1124,11 +1181,18 @@ const getExtractedData = async (req, res) => {
 /**
  * Reprocess a report (full reprocess - clear all data and process from scratch)
  * Used when processing was incomplete or failed
+ *
+ * Permissions:
+ * - All users: can reprocess reports with status 'error' or 'uploaded'
+ * - Admin/Super Admin only: can also reprocess reports with status 'ready' (pending review)
  */
 const reprocessReport = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('[REPROCESS] Starting reprocess for report:', id);
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+
+    console.log('[REPROCESS] Starting reprocess for report:', id, 'by:', req.user?.email, 'role:', userRole);
 
     const report = await Report.findById(id);
 
@@ -1136,16 +1200,33 @@ const reprocessReport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Report not found' });
     }
 
-    // Only allow reprocess for reports with status: ready, error, or with processing issues
-    if (!['ready', 'error'].includes(report.status) && !report.processingIssues?.hasIncompleteProcessing) {
-      return res.status(400).json({
-        success: false,
-        message: 'Report cannot be reprocessed in current state'
-      });
-    }
-
     console.log('[REPROCESS] Current status:', report.status);
     console.log('[REPROCESS] Has incomplete processing:', report.processingIssues?.hasIncompleteProcessing);
+
+    // Define allowed statuses based on role
+    // All users: can reprocess 'error' or 'uploaded'
+    // Admin only: can also reprocess 'ready' (pending review)
+    const allUserStatuses = ['error', 'uploaded'];
+    const adminOnlyStatuses = ['ready'];
+
+    const canReprocess =
+      allUserStatuses.includes(report.status) ||
+      (isAdmin && adminOnlyStatuses.includes(report.status)) ||
+      report.processingIssues?.hasIncompleteProcessing;
+
+    if (!canReprocess) {
+      // Provide appropriate error message based on role
+      if (!isAdmin && report.status === 'ready') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admins can reprocess reports that are pending review'
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Report cannot be reprocessed in current state '${report.status}'`
+      });
+    }
 
     // Clear existing data for fresh processing
     report.status = 'uploaded';
