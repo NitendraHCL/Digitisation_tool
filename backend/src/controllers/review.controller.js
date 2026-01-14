@@ -1569,16 +1569,16 @@ const publishReport = async (req, res) => {
       // fields - fixed + blank + null values (same for all rows)
       const fields = {
         // ------------ FIXED FIELDS ------------
-        g_created_by_id: "Richa001",
-        g_created_by_name: "Richa",
-        g_created_by_loginId: "richajain",
-        g_created_by_role: "Admin",
-        g_created_by_role_type: "AdminRole",
-        g_modified_by_id: "Richa001",
-        g_modified_by_loginId: "richajain",
-        g_modified_by_name: "Richa",
-        g_modified_by_role: "Admin",
-        g_modified_by_role_type: "AdminRole",
+        g_created_by_id: "Digit001",
+        g_created_by_name: "Digitization",
+        g_created_by_loginId: "digitizationtool",
+        g_created_by_role: "DigitizationAdmin",
+        g_created_by_role_type: "DigitizationAdminRole",
+        g_modified_by_id: "Digit001",
+        g_modified_by_loginId: "digitizationtool",
+        g_modified_by_name: "Digitization",
+        g_modified_by_role: "DigitizationAdmin",
+        g_modified_by_role_type: "DigitizationAdminRole",
         g_soft_delete: "N",
         isResultCritical: false,
         isAmended: false,
@@ -1721,6 +1721,7 @@ const publishReport = async (req, res) => {
 
     // 5. Update report status to 'published'
     report.status = 'published';
+    report.publishedBy = req.user.userId;
     report.publishedAt = new Date();
     await report.save();
     console.log(`[REVIEW CONTROLLER] Report status updated to 'published'`);

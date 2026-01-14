@@ -354,6 +354,16 @@ const reportSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // Publish info (Phase 7)
+  publishedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  publishedAt: {
+    type: Date,
+    default: null
+  },
   // Validation warnings for data mismatches
   validationWarnings: [{
     type: {
