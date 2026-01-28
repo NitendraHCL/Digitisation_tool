@@ -1516,6 +1516,9 @@ const publishReport = async (req, res) => {
     };
     const getUniqueId = () => `${crypto.randomUUID()}-${nextNumber()}`;
 
+    // Create timestamp once for all rows in this publish operation
+    const publishTimestamp = Long.fromNumber(Date.now());
+
     // 3. Build rows for each result
     const allResults = [];
 
@@ -1706,8 +1709,8 @@ const publishReport = async (req, res) => {
         ...apiPart,
         id: rowId,
         _id: rowId,
-        g_creation_time: Long.fromNumber(Date.now()),
-        g_modify_time: Long.fromNumber(Date.now())
+        g_creation_time: publishTimestamp,
+        g_modify_time: publishTimestamp
       };
 
       allResults.push(finalRow);
