@@ -248,7 +248,7 @@ const AdminDashboard: React.FC = () => {
 
   const statCards = [
     {
-      title: 'Total Reports',
+      title: 'Total Report',
       value: stats?.totalReports || 0,
       change: stats?.trends ? formatTrendValue(stats.trends.totalReports) : '+0%',
       trend: (stats?.trends?.totalReports || 0) >= 0 ? 'up' : 'down',
