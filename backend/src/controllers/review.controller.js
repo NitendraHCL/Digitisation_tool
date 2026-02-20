@@ -293,6 +293,10 @@ const editParameter = async (req, res) => {
       console.log('[EDIT PARAM] Field is not "value", skipping flag recalculation');
     }
 
+    // Mark nested paths as modified so Mongoose persists the changes
+    report.markModified('extractedData');
+    report.markModified('finalData');
+
     console.log('[EDIT PARAM] Saving report to database...');
     const saveResult = await report.save();
     console.log('[EDIT PARAM] ✓ Report saved successfully');
@@ -423,6 +427,9 @@ const editDemographics = async (req, res) => {
     // Add all changes to edit history
     report.editHistory.push(...changes);
 
+    // Mark nested paths as modified so Mongoose persists the changes
+    report.markModified('extractedData');
+
     // Save the report
     await report.save();
 
@@ -550,6 +557,10 @@ const bulkEditParameters = async (req, res) => {
       report.flags = newFlags;
       report.uiIndicators = newIndicators;
     }
+
+    // Mark nested paths as modified so Mongoose persists the changes
+    report.markModified('extractedData');
+    report.markModified('finalData');
 
     await report.save();
 
