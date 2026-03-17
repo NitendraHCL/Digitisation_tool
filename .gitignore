@@ -69,3 +69,15 @@ backend/logs/
 # Claude Code
 .claude/
 .git-backup/
+
+# Private keys
+*.pem
+
+# Claude temp files
+tmpclaude-*
+
+# Windows artifacts
+nul
+
+# Debug artifacts
+tracked_files.txt
