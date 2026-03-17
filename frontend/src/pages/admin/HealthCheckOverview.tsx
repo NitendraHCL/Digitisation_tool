@@ -241,9 +241,6 @@ const HealthCheckOverview: React.FC = () => {
   const cugBreakdown = stats?.cugBreakdown || [];
   const srErrorsByProvider = stats?.smartReportErrorsByProvider || [];
   const vendorDist = stats?.vendorDistribution || [];
-  const cugDist = stats?.cugDistribution || [];
-  const statusBkdn = stats?.statusBreakdown || [];
-  const relBkdn = stats?.relationshipBreakdown || [];
   const dailyTrend = stats?.dailyTrend || [];
 
   const cugTreemapData = cugBreakdown.map(c => ({
@@ -727,65 +724,6 @@ const HealthCheckOverview: React.FC = () => {
             </ChartCard>
           </Box>
 
-          {/* ═══ Relationship & Status ═══ */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
-            {/* Relationship pie */}
-            <ChartCard color={ACCENT.teal} title="Relationship Distribution"
-              subtitle="Self vs Dependents breakdown"
-              tooltip="Shows the proportion of health checks for employees (Self) versus their dependents.">
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie data={relBkdn} dataKey="count" cx="50%" cy="50%" outerRadius={85}
-                    label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
-                    labelLine={{ stroke: '#9CA3AF' }}
-                  >
-                    {relBkdn.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, fontSize: 12, border: '1px solid #E5E7EB' }} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* Status Breakdown */}
-            <ChartCard color={ACCENT.amber} title="Order Status Breakdown"
-              subtitle="Distribution of observation statuses"
-              tooltip="Final = report completed and signed off. Other statuses indicate in-progress orders.">
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={statusBkdn}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#9ca3af" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#9ca3af" />
-                  <RechartsTooltip contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb' }} />
-                  <Bar dataKey="count" name="Orders" radius={[4, 4, 0, 0]}>
-                    {statusBkdn.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* CUG Distribution pie (compact) */}
-            <ChartCard color={ACCENT.purple} title="CUG Distribution"
-              subtitle="Orders by corporate user group"
-              tooltip="Proportion of orders across different CUGs.">
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie data={cugDist} cx="50%" cy="50%" innerRadius={45} outerRadius={85} dataKey="count"
-                    label={({ name, percent }) => (percent ?? 0) > 0.05 ? `${name}: ${((percent ?? 0) * 100).toFixed(0)}%` : ''}
-                    labelLine={{ stroke: '#9CA3AF' }}>
-                    {cugDist.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, fontSize: 12, border: '1px solid #E5E7EB' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          </Box>
         </>
       )}
     </Box>

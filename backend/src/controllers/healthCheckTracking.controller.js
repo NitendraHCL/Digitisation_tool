@@ -163,7 +163,7 @@ exports.getStats = async (req, res) => {
                   {
                     $and: [
                       { $ne: ['$syncStatus', true] },
-                      { $eq: ['$digitizationReportStatus', 'Processed'] }
+                      { $eq: ['$digitizationReportStatus', 'published'] }
                     ]
                   },
                   1, 0
