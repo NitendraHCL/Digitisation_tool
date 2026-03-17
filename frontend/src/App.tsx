@@ -28,6 +28,8 @@ import ConfigurationManagement from './pages/admin/ConfigurationManagement';
 import AuditDashboard from './pages/admin/AuditDashboard';
 import ParameterMasterManagement from './pages/admin/ParameterMasterManagement';
 import ExclusionMasterManagement from './pages/admin/ExclusionMasterManagement';
+import HealthCheckOverview from './pages/admin/HealthCheckOverview';
+import HealthCheckList from './pages/admin/HealthCheckList';
 
 
 function App() {
@@ -164,6 +166,28 @@ function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <ExclusionMasterManagement />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Health Check Tracking - accessible to all roles */}
+                <Route
+                  path="health-check-tracking"
+                  element={<Navigate to="/health-check-tracking/overview" replace />}
+                />
+                <Route
+                  path="health-check-tracking/overview"
+                  element={
+                    <ProtectedRoute allowedRoles={['nurse', 'admin', 'super_admin']}>
+                      <HealthCheckOverview />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="health-check-tracking/list"
+                  element={
+                    <ProtectedRoute allowedRoles={['nurse', 'admin', 'super_admin']}>
+                      <HealthCheckList />
                     </ProtectedRoute>
                   }
                 />

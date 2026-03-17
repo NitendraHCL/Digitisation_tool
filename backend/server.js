@@ -336,6 +336,17 @@ try {
   console.error('[SERVER] Stack trace:', error.stack);
 }
 
+// Health Check Tracking routes
+console.log('[SERVER] Loading health check tracking routes...');
+try {
+  const healthCheckTrackingRoutes = require('./src/routes/healthCheckTracking.routes');
+  app.use('/api/health-check-tracking', healthCheckTrackingRoutes);
+  console.log('[SERVER] ✓ Health check tracking routes registered at /api/health-check-tracking');
+} catch (error) {
+  console.error('[SERVER] ✗ ERROR loading health check tracking routes:', error.message);
+  console.error('[SERVER] Stack trace:', error.stack);
+}
+
 console.log('[SERVER] ========== ALL ROUTES LOADED ==========');
 
 // 404 handler

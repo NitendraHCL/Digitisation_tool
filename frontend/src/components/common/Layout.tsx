@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  AppBar,
   Box,
   CssBaseline,
   Drawer,
@@ -10,7 +9,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Toolbar,
   Typography,
   Avatar,
   Menu,
@@ -20,7 +18,10 @@ import {
   Tooltip,
   useTheme,
   useMediaQuery,
-  Chip,
+  Collapse,
+  Paper,
+  Popper,
+  ClickAwayListener,
 } from '@mui/material';
 import api from '../../services/api';
 import {
@@ -30,12 +31,9 @@ import {
   Assignment as ReportsIcon,
   Settings as SettingsIcon,
   People as PeopleIcon,
-  Assessment as AnalyticsIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
   CheckCircle,
-  CheckCircle as ApprovedIcon,
-  Warning as FlagIcon,
   Science as LabIcon,
   AdminPanelSettings as AdminIcon,
   ChevronLeft as ChevronLeftIcon,
@@ -44,14 +42,18 @@ import {
   ListAlt as ParameterIcon,
   Block as ExclusionIcon,
   Inbox as InboxIcon,
+  MonitorHeart as HealthCheckIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  BarChart as OverviewIcon,
+  TableChart as ListIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-const drawerWidth = 280;
+const drawerWidth = 260;
 const collapsedDrawerWidth = 70;
 
-// Habit Health brand colors
 const brandColors = {
   navyBlue: '#1E4088',
   navyBlueDark: '#162D5E',
@@ -65,6 +67,7 @@ interface NavItem {
   icon: React.ReactElement;
   roles?: string[];
   badge?: number;
+  children?: { title: string; path: string; icon: React.ReactElement; badge?: number }[];
 }
 
 const Layout: React.FC = () => {
@@ -75,10 +78,14 @@ const Layout: React.FC = () => {
   const { user, logout, isAdmin, isNurse } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopOpen, setDesktopOpen] = useState(true);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [profileAnchor, setProfileAnchor] = useState<null | HTMLElement>(null);
   const [readyReportsCount, setReadyReportsCount] = useState(0);
   const [pendingParamSuggestions, setPendingParamSuggestions] = useState(0);
   const [pendingExclusionSuggestions, setPendingExclusionSuggestions] = useState(0);
+  const [expandedNavs, setExpandedNavs] = useState<Record<string, boolean>>({ '/health-check-tracking': true, '/admin/masters': true });
+  const [flyoutAnchor, setFlyoutAnchor] = useState<{ el: HTMLElement; item: NavItem } | null>(null);
+
+  const isExpanded = desktopOpen || isMobile;
 
   // Fetch ready reports count for review queue badge
   useEffect(() => {
@@ -93,9 +100,7 @@ const Layout: React.FC = () => {
         console.error('Failed to fetch ready reports count:', error);
       }
     };
-
     fetchReadyCount();
-    // Refresh count every 30 seconds
     const interval = setInterval(fetchReadyCount, 30000);
     return () => clearInterval(interval);
   }, [isNurse]);
@@ -115,24 +120,10 @@ const Layout: React.FC = () => {
         console.error('Failed to fetch pending suggestions count:', error);
       }
     };
-
     fetchPendingSuggestionsCount();
-    // Refresh count every 30 seconds
     const interval = setInterval(fetchPendingSuggestionsCount, 30000);
     return () => clearInterval(interval);
   }, [isAdmin]);
-
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
-
-  const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleProfileMenuClose = () => {
-    setAnchorEl(null);
-  };
 
   const handleLogout = () => {
     logout();
@@ -148,285 +139,305 @@ const Layout: React.FC = () => {
     },
     ...(isNurse
       ? [
-          {
-            title: 'Upload Report',
-            path: '/nurse/upload',
-            icon: <UploadIcon />,
-          },
-          {
-            title: 'My Reports',
-            path: '/nurse/reports',
-            icon: <ReportsIcon />,
-          },
-          {
-            title: 'Review Queue',
-            path: '/nurse/review',
-            icon: <CheckCircle />,
-            badge: readyReportsCount >= 1 ? readyReportsCount : undefined,
-          },
-          {
-            title: 'My Requests',
-            path: '/nurse/my-requests',
-            icon: <InboxIcon />,
-          },
+          { title: 'Upload Report', path: '/nurse/upload', icon: <UploadIcon /> },
+          { title: 'My Reports', path: '/nurse/reports', icon: <ReportsIcon /> },
+          { title: 'Review Queue', path: '/nurse/review', icon: <CheckCircle />, badge: readyReportsCount >= 1 ? readyReportsCount : undefined },
+          { title: 'My Requests', path: '/nurse/my-requests', icon: <InboxIcon /> },
         ]
       : []),
     ...(isAdmin
       ? [
+          { title: 'All Reports', path: '/admin/reports', icon: <ReportsIcon /> },
+          { title: 'Configuration', path: '/admin/config', icon: <SettingsIcon /> },
           {
-            title: 'All Reports',
-            path: '/admin/reports',
-            icon: <ReportsIcon />,
+            title: 'Masters',
+            path: '/admin/masters',
+            icon: <AdminIcon />,
+            badge: (pendingParamSuggestions + pendingExclusionSuggestions) >= 1
+              ? pendingParamSuggestions + pendingExclusionSuggestions : undefined,
+            children: [
+              { title: 'Parameter Master', path: '/admin/parameter-master', icon: <ParameterIcon />, badge: pendingParamSuggestions >= 1 ? pendingParamSuggestions : undefined },
+              { title: 'Exclusion Master', path: '/admin/exclusion-master', icon: <ExclusionIcon />, badge: pendingExclusionSuggestions >= 1 ? pendingExclusionSuggestions : undefined },
+              { title: 'User Management', path: '/admin/users', icon: <PeopleIcon /> },
+            ],
           },
-          {
-            title: 'User Management',
-            path: '/admin/users',
-            icon: <PeopleIcon />,
-          },
-          {
-            title: 'Configuration',
-            path: '/admin/config',
-            icon: <SettingsIcon />,
-          },
-          {
-            title: 'Parameters Master',
-            path: '/admin/parameter-master',
-            icon: <ParameterIcon />,
-            badge: pendingParamSuggestions >= 1 ? pendingParamSuggestions : undefined,
-          },
-          {
-            title: 'Exclusion Master',
-            path: '/admin/exclusion-master',
-            icon: <ExclusionIcon />,
-            badge: pendingExclusionSuggestions >= 1 ? pendingExclusionSuggestions : undefined,
-          },
-          {
-            title: 'Audit Logs',
-            path: '/admin/audit',
-            icon: <AuditIcon />,
-          },
+          { title: 'Audit Logs', path: '/admin/audit', icon: <AuditIcon /> },
         ]
       : []),
+    {
+      title: 'Health Check',
+      path: '/health-check-tracking',
+      icon: <HealthCheckIcon />,
+      children: [
+        { title: 'Overview', path: '/health-check-tracking/overview', icon: <OverviewIcon /> },
+        { title: 'List', path: '/health-check-tracking/list', icon: <ListIcon /> },
+      ],
+    },
   ];
 
-  const getRoleColor = () => {
-    switch (user?.role) {
-      case 'super_admin':
-        return 'error';
-      case 'admin':
-        return 'warning';
-      case 'nurse':
-        return 'success';
-      default:
-        return 'default';
-    }
-  };
+  const renderNavItem = (item: NavItem) => {
+    const hasChildren = item.children && item.children.length > 0;
+    const isChildActive = hasChildren && item.children!.some(c => location.pathname === c.path);
+    const isDirectActive = !hasChildren && location.pathname === item.path;
 
-  const getRoleIcon = () => {
-    switch (user?.role) {
-      case 'super_admin':
-      case 'admin':
-        return <AdminIcon sx={{ fontSize: 16 }} />;
-      default:
-        return null;
-    }
-  };
-
-  const roleIcon = getRoleIcon();
-
-  const drawer = (
-    <Box sx={{ bgcolor: brandColors.navyBlue, minHeight: '100%', color: '#fff' }}>
-      <Toolbar sx={{ px: 2, py: 3, justifyContent: desktopOpen || isMobile ? 'flex-start' : 'center' }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: desktopOpen || isMobile ? 'flex-start' : 'center', width: '100%' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <LabIcon sx={{ fontSize: 32, color: brandColors.orange, mr: desktopOpen || isMobile ? 1 : 0 }} />
-            {(desktopOpen || isMobile) && (
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: brandColors.orange }}>
-                  Lab Digitizer
-                </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                  Medical Report System
-                </Typography>
-              </Box>
-            )}
-          </Box>
-        </Box>
-      </Toolbar>
-      <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
-
-      <List sx={{ px: 2, pt: 2 }}>
-        {navItems.map((item) => (
-          <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-            <Tooltip title={!desktopOpen && !isMobile ? item.title : ''} placement="right">
-              <ListItemButton
-                onClick={() => {
+    return (
+      <React.Fragment key={item.path}>
+        <ListItem disablePadding sx={{ mb: 0.5 }}>
+          <Tooltip title={!isExpanded ? item.title : ''} placement="right">
+            <ListItemButton
+              onClick={(e) => {
+                if (hasChildren) {
+                  if (isExpanded) {
+                    setExpandedNavs(prev => ({ ...prev, [item.path]: !prev[item.path] }));
+                  } else {
+                    setFlyoutAnchor(flyoutAnchor?.item.path === item.path ? null : { el: e.currentTarget as HTMLElement, item });
+                  }
+                } else {
                   navigate(item.path);
                   if (isMobile) setMobileOpen(false);
-                }}
-                selected={location.pathname === item.path}
-                sx={{
-                  borderRadius: 2,
-                  justifyContent: desktopOpen || isMobile ? 'flex-start' : 'center',
-                  color: 'rgba(255,255,255,0.85)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.1)',
-                  },
-                  '&.Mui-selected': {
-                    bgcolor: '#fff',
-                    color: brandColors.navyBlue,
-                    '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.9)',
-                    },
-                    '& .MuiListItemIcon-root': {
-                      color: brandColors.navyBlue,
-                    },
-                  },
-                  '& .MuiListItemIcon-root': {
-                    color: 'rgba(255,255,255,0.85)',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: desktopOpen || isMobile ? 40 : 'auto', justifyContent: 'center' }}>
-                  {item.badge ? (
-                    <Badge badgeContent={item.badge} color="error">
-                      {item.icon}
-                    </Badge>
-                  ) : (
-                    item.icon
-                  )}
-                </ListItemIcon>
-                {(desktopOpen || isMobile) && <ListItemText primary={item.title} />}
-              </ListItemButton>
-            </Tooltip>
-          </ListItem>
-        ))}
-      </List>
-
-      {/* Powered by HCL Healthcare Card - only show when drawer is expanded */}
-      {(desktopOpen || isMobile) && (
-        <Box sx={{ px: 2, mt: 'auto', pt: 4, mb: !isMobile ? 8 : 2 }}>
-          <Box
-            sx={{
-              p: 2,
-              bgcolor: 'rgba(255,255,255,0.1)',
-              borderRadius: 2,
-              border: '1px solid rgba(255,255,255,0.15)',
-              textAlign: 'center',
-            }}
-          >
-            <Typography
-              variant="body2"
+                }
+              }}
+              selected={isDirectActive || isChildActive}
               sx={{
+                borderRadius: 2,
+                justifyContent: isExpanded ? 'flex-start' : 'center',
                 color: 'rgba(255,255,255,0.85)',
-                display: 'block',
-                mb: 1.5,
-                fontWeight: 500,
-                fontSize: '14px',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+                '&.Mui-selected': {
+                  bgcolor: '#fff', color: brandColors.navyBlue,
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+                  '& .MuiListItemIcon-root': { color: brandColors.navyBlue },
+                },
+                '& .MuiListItemIcon-root': { color: 'rgba(255,255,255,0.85)' },
               }}
             >
-              Powered by
-            </Typography>
-            <img
-              src="/hcl-healthcare-logo-white.png"
-              alt="HCL Healthcare"
-              style={{
-                width: '160px',
-                height: 'auto',
-                imageRendering: 'crisp-edges',
-                WebkitFontSmoothing: 'antialiased',
-                filter: 'contrast(1.1)',
-              }}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-          </Box>
+              <ListItemIcon sx={{ minWidth: isExpanded ? 40 : 'auto', justifyContent: 'center' }}>
+                {item.badge ? <Badge badgeContent={item.badge} color="error">{item.icon}</Badge> : item.icon}
+              </ListItemIcon>
+              {isExpanded && <ListItemText primary={item.title} primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }} />}
+              {isExpanded && hasChildren && (
+                expandedNavs[item.path]
+                  ? <ExpandLessIcon sx={{ fontSize: 18, opacity: 0.7 }} />
+                  : <ExpandMoreIcon sx={{ fontSize: 18, opacity: 0.7 }} />
+              )}
+            </ListItemButton>
+          </Tooltip>
+        </ListItem>
+
+        {hasChildren && isExpanded && (
+          <Collapse in={expandedNavs[item.path]} timeout="auto" unmountOnExit>
+            <List disablePadding sx={{ pl: 2 }}>
+              {item.children!.map((child) => (
+                <ListItem key={child.path} disablePadding sx={{ mb: 0.25 }}>
+                  <ListItemButton
+                    onClick={() => { navigate(child.path); if (isMobile) setMobileOpen(false); }}
+                    selected={location.pathname === child.path}
+                    sx={{
+                      borderRadius: 2, py: 0.75,
+                      color: 'rgba(255,255,255,0.7)',
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' },
+                      '&.Mui-selected': {
+                        bgcolor: 'rgba(255,255,255,0.15)', color: '#fff',
+                        '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                        '& .MuiListItemIcon-root': { color: brandColors.orange },
+                      },
+                      '& .MuiListItemIcon-root': { color: 'rgba(255,255,255,0.6)' },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32, justifyContent: 'center' }}>
+                      {child.badge ? (
+                        <Badge badgeContent={child.badge} color="error" sx={{ '& .MuiBadge-badge': { fontSize: 10, minWidth: 16, height: 16 } }}>
+                          {child.icon}
+                        </Badge>
+                      ) : child.icon}
+                    </ListItemIcon>
+                    <ListItemText primary={child.title} primaryTypographyProps={{ fontSize: 13 }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Collapse>
+        )}
+      </React.Fragment>
+    );
+  };
+
+  const drawer = (
+    <Box sx={{
+      bgcolor: brandColors.navyBlue, height: '100%', color: '#fff',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      {/* ── Brand ── */}
+      <Box sx={{ px: 2, py: 2.5, flexShrink: 0, justifyContent: isExpanded ? 'flex-start' : 'center', display: 'flex' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+          onClick={() => navigate(isAdmin ? '/admin/dashboard' : '/nurse/dashboard')}>
+          <LabIcon sx={{ fontSize: 32, color: brandColors.orange, mr: isExpanded ? 1.5 : 0 }} />
+          {isExpanded && (
+            <Box>
+              <Typography sx={{ fontWeight: 700, color: brandColors.orange, fontSize: 17, lineHeight: 1.2, letterSpacing: '-0.01em' }}>
+                Lab Digitizer
+              </Typography>
+              <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>
+                Medical Report System
+              </Typography>
+            </Box>
+          )}
         </Box>
+      </Box>
+      <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', mx: 2 }} />
+
+      {/* ── Navigation ── */}
+      <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', px: 1.5, pt: 1.5,
+        '&::-webkit-scrollbar': { width: 4 },
+        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.15)', borderRadius: 999 },
+      }}>
+        <List disablePadding>
+          {navItems.map(renderNavItem)}
+        </List>
+      </Box>
+
+      {/* ── Flyout Popper for collapsed sidebar ── */}
+      {flyoutAnchor && !desktopOpen && !isMobile && (
+        <Popper open anchorEl={flyoutAnchor.el} placement="right-start" sx={{ zIndex: 1300 }}>
+          <ClickAwayListener onClickAway={() => setFlyoutAnchor(null)}>
+            <Paper sx={{
+              ml: 1, py: 1, px: 0.5, minWidth: 170, borderRadius: 2,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)', border: '1px solid #E5E7EB',
+            }}>
+              <Typography sx={{ px: 2, py: 0.5, fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {flyoutAnchor.item.title}
+              </Typography>
+              {flyoutAnchor.item.children!.map((child) => (
+                <ListItemButton
+                  key={child.path}
+                  onClick={() => { navigate(child.path); setFlyoutAnchor(null); }}
+                  selected={location.pathname === child.path}
+                  sx={{
+                    borderRadius: 1.5, mx: 0.5, py: 0.75,
+                    '&.Mui-selected': { bgcolor: 'rgba(30,64,136,0.08)', color: brandColors.navyBlue },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 28 }}>
+                    {child.badge ? (
+                      <Badge badgeContent={child.badge} color="error" sx={{ '& .MuiBadge-badge': { fontSize: 10, minWidth: 16, height: 16 } }}>
+                        {child.icon}
+                      </Badge>
+                    ) : child.icon}
+                  </ListItemIcon>
+                  <ListItemText primary={child.title} primaryTypographyProps={{ fontSize: 13, fontWeight: 500 }} />
+                </ListItemButton>
+              ))}
+            </Paper>
+          </ClickAwayListener>
+        </Popper>
       )}
 
-      {!isMobile && (
-        <Box sx={{ position: 'absolute', bottom: 16, left: 0, right: 0, px: 2 }}>
-          <IconButton
-            onClick={() => setDesktopOpen(!desktopOpen)}
-            sx={{
-              width: '100%',
-              borderRadius: 2,
-              bgcolor: 'rgba(255,255,255,0.1)',
-              color: 'rgba(255,255,255,0.85)',
-              '&:hover': {
-                bgcolor: 'rgba(255,255,255,0.2)',
-              },
-            }}
-          >
-            {desktopOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-          </IconButton>
+      {/* ── Bottom section: Powered by + User + Collapse ── */}
+      <Box sx={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        {/* Powered by - only when expanded */}
+        {isExpanded && (
+          <Box sx={{ px: 2, pt: 2 }}>
+            <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.08)', borderRadius: 2, textAlign: 'center' }}>
+              <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, mb: 0.5 }}>Powered by</Typography>
+              <img
+                src="/hcl-healthcare-logo-white.png" alt="HCL Healthcare"
+                style={{ width: 130, height: 'auto', filter: 'contrast(1.1)' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            </Box>
+          </Box>
+        )}
+
+        {/* User profile */}
+        <Box
+          onClick={(e) => setProfileAnchor(e.currentTarget)}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 1.5,
+            px: 2, py: 1.5, mx: 1.5, mt: 1.5, mb: 0.5,
+            borderRadius: 2, cursor: 'pointer',
+            justifyContent: isExpanded ? 'flex-start' : 'center',
+            transition: 'background 0.15s',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+          }}
+        >
+          <Avatar sx={{
+            width: 34, height: 34, fontSize: 14, fontWeight: 700,
+            bgcolor: brandColors.orange, color: '#fff',
+          }}>
+            {user?.name?.charAt(0).toUpperCase()}
+          </Avatar>
+          {isExpanded && (
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.name}
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize' }}>
+                {user?.role?.replace('_', ' ')}
+              </Typography>
+            </Box>
+          )}
         </Box>
-      )}
+
+        {/* Collapse toggle - desktop only */}
+        {!isMobile && (
+          <Box sx={{ px: 1.5, pb: 1.5 }}>
+            <IconButton
+              onClick={() => { setDesktopOpen(!desktopOpen); setFlyoutAnchor(null); }}
+              sx={{
+                width: '100%', borderRadius: 2, py: 0.75,
+                bgcolor: 'rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.7)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' },
+                display: 'flex', gap: 1,
+              }}
+            >
+              {desktopOpen ? <ChevronLeftIcon sx={{ fontSize: 20 }} /> : <ChevronRightIcon sx={{ fontSize: 20 }} />}
+              {isExpanded && <Typography sx={{ fontSize: 12, fontWeight: 500 }}>Collapse</Typography>}
+            </IconButton>
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
-      <AppBar
-        position="fixed"
-        sx={{
-          width: { md: `calc(100% - ${desktopOpen ? drawerWidth : collapsedDrawerWidth}px)` },
-          ml: { md: `${desktopOpen ? drawerWidth : collapsedDrawerWidth}px` },
-          bgcolor: brandColors.navyBlue,
-          color: '#fff',
-          transition: theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-        }}
-      >
-        <Toolbar>
-          <IconButton
-            color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { md: 'none' } }}
-          >
-            <MenuIcon />
-          </IconButton>
 
-          <Box sx={{ flexGrow: 1 }} />
-
-          <Tooltip title="Profile">
-            <IconButton onClick={handleProfileMenuOpen} sx={{ p: 0 }}>
-              <Avatar sx={{ bgcolor: brandColors.orange }}>
-                {user?.name?.charAt(0).toUpperCase()}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-        </Toolbar>
-      </AppBar>
+      {/* Mobile hamburger */}
+      {isMobile && (
+        <IconButton
+          onClick={() => setMobileOpen(!mobileOpen)}
+          sx={{
+            position: 'fixed', top: 12, left: 12, zIndex: 1300,
+            bgcolor: brandColors.navyBlue, color: '#fff',
+            width: 40, height: 40, boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            '&:hover': { bgcolor: brandColors.navyBlueDark },
+          }}
+        >
+          <MenuIcon sx={{ fontSize: 20 }} />
+        </IconButton>
+      )}
 
       <Box
         component="nav"
         sx={{ width: { md: desktopOpen ? drawerWidth : collapsedDrawerWidth }, flexShrink: { md: 0 } }}
-        aria-label="navigation"
       >
+        {/* Mobile drawer */}
         <Drawer
           variant="temporary"
           open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{
-            keepMounted: true, // Better open performance on mobile.
-          }}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: drawerWidth,
-            },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
         >
           {drawer}
         </Drawer>
+
+        {/* Desktop drawer */}
         <Drawer
           variant="permanent"
           sx={{
@@ -434,12 +445,12 @@ const Layout: React.FC = () => {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: desktopOpen ? drawerWidth : collapsedDrawerWidth,
-              borderRight: '1px solid',
-              borderColor: theme.palette.divider,
+              borderRight: 'none',
               transition: theme.transitions.create('width', {
                 easing: theme.transitions.easing.sharp,
                 duration: theme.transitions.duration.enteringScreen,
               }),
+              overflow: 'visible',
             },
           }}
           open
@@ -448,6 +459,7 @@ const Layout: React.FC = () => {
         </Drawer>
       </Box>
 
+      {/* Main content - no top bar spacer */}
       <Box
         component="main"
         sx={{
@@ -455,43 +467,36 @@ const Layout: React.FC = () => {
           p: 3,
           width: { md: `calc(100% - ${desktopOpen ? drawerWidth : collapsedDrawerWidth}px)` },
           minHeight: '100vh',
-          bgcolor: theme.palette.background.default,
+          bgcolor: '#F5F6FA',
           transition: theme.transitions.create(['width', 'margin'], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
           }),
         }}
       >
-        <Toolbar />
         <Outlet />
       </Box>
 
-      {/* Profile Menu */}
+      {/* Profile dropdown menu */}
       <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleProfileMenuClose}
-        PaperProps={{
-          sx: { width: 200, mt: 1.5 },
-        }}
+        anchorEl={profileAnchor}
+        open={Boolean(profileAnchor)}
+        onClose={() => setProfileAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        PaperProps={{ sx: { width: 200, borderRadius: 2, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' } }}
       >
         <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="subtitle2">{user?.name}</Typography>
-          <Typography variant="caption" color="text.secondary">
-            {user?.email}
-          </Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{user?.name}</Typography>
+          <Typography sx={{ fontSize: 11, color: '#9CA3AF' }}>{user?.email}</Typography>
         </Box>
         <Divider />
-        <MenuItem onClick={() => navigate('/profile')}>
-          <ListItemIcon>
-            <PersonIcon fontSize="small" />
-          </ListItemIcon>
+        <MenuItem onClick={() => { navigate('/profile'); setProfileAnchor(null); }} sx={{ fontSize: 13 }}>
+          <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Profile</ListItemText>
         </MenuItem>
-        <MenuItem onClick={handleLogout}>
-          <ListItemIcon>
-            <LogoutIcon fontSize="small" />
-          </ListItemIcon>
+        <MenuItem onClick={() => { handleLogout(); setProfileAnchor(null); }} sx={{ fontSize: 13 }}>
+          <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Logout</ListItemText>
         </MenuItem>
       </Menu>
