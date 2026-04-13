@@ -580,10 +580,10 @@ const AdminDashboard: React.FC = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     borderRadius: 8,
                   }}
-                  formatter={(value: any, name: string | undefined, props: any) => [
-                    `${value} reports (${props?.payload?.percentage?.toFixed(1) || 0}%)`,
+                  formatter={(value: any, _name: any, props: any) => [
+                    `${value} reports (${(props as any)?.payload?.percentage?.toFixed(1) || 0}%)`,
                     'Count'
-                  ]}
+                  ] as any}
                 />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {(() => {
